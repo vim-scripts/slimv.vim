@@ -1,0 +1,76 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=2531
+
+Slimv tries to mimic a subset of SLIME's (Superior Lisp Interaction Mode for Emacs) functionality inside Vim on Linux, Windows and Mac OS X. The script defines functions and keybindings to send s-expressions to a console mode Lisp or Clojure REPL (Read-Eval-Print Loop). Slimv runs its own REPL or connects to a running REPL started by a previous Slimv session, the connection is established when the first Slimv command is executed (e.g. an s-expression is evaluated).
+
+The Lisp REPL buffer can also be opened inside Vim as a Vim buffer with syntax highlighting and autoindenting, Lisp commands may be entered in the command line, just as in a regular REPL. The script also has a basic support for Clojure REPL.
+
+Slimv supports the same profiling tool that comes with SLIME. The script also has a Common Lisp Hyperspec lookup feature and it is able to lookup symbols in the Clojure API, as well as in JavaDoc. Symbol name completion is supported via Vim's omni-completion based on the hyperspec symbol database.
+
+Slimv comes with Paredit Mode, which is similar to the functionality of paredit.el in Emacs. Paredit Mode tries to maintain the balanced state of matched characters (parenthesis marks, square brackets, double quotes). Matched characters are inserted and removed in pairs, also when working with a block of text (well, mostly). Slimv also implements many paredit.el s-expression handling functions, like Split/Join/Wrap/Splice. Slurpage and Barfage known from Emacs is also possible but in a different fashion: you don't move the list element in or out of the list, rather you move the opening or closing parenthesis over the element or sub-list.
+
+Check out the screenshot of Slimv having a clisp REPL buffer:
+http://img6.imageshack.us/img6/5104/slimvscreenshotx.png
+
+Another screenshot of Slimv running the Clojure Ants demo:
+http://img21.imageshack.us/img21/3949/slimvants.png
+
+And this is the symbol name completion in action (no, the pink background is not done by Slimv, this is Vim's default):
+http://img18.imageshack.us/img18/5859/slimvcompl.png
+
+Here follows a list of Slimv commands, any similarity with SLIME's menu is not coincidental. :)
+For a more complete description with keybindings see the included documentation.
+
+Edit commands:
+    *  Close Form
+    *  Complete Symbol
+    *  Paredit Toggle
+
+Evaluation commands:
+    *  Eval Defun
+    *  Eval Last Expression
+    *  Pprint Eval Last Expression
+    *  Eval Region
+    *  Eval Buffer
+    *  Interactive Eval
+    *  Undefine Function
+
+Debug commands:
+    *  Macroexpand-1
+    *  Macroexpand
+    *  Trace
+    *  Untrace
+    *  Disassemble
+    *  Inspect
+
+Compile commands:
+    *  Compile Defun
+    *  Compile and Load File
+    *  Compile File
+    *  Compile Region
+
+Profile commands:
+    *  Load Profiler
+    *  Profile
+    *  Unprofile
+    *  Unprofile All
+    *  Show Profiled
+    *  Profile Report
+    *  Profile Reset
+
+Documentation commands:
+    *  Describe Symbol
+    *  Apropos
+    *  Hyperspec
+    *  Generate Tags
+
+REPL commands:
+    *  Connect to Server
+    *  Send Input
+    *  Interrupt Lisp Process
+    *  Close and Send Input
+    *  Previous Input
+    *  Next Input
+
+Many Slimv commands operate on s-expressions or symbols, just like in SLIME. Place the cursor at any location inside the s-expression or on the symbol's name then invoke the command. This builds a command specific form and sends it to the running REPL for evaluation.
+
+For more information see the documentation coupled with the script, please refer to section "External Utilities" for other useful Lisp editing tips not covered by Slimv.
