@@ -1,7 +1,7 @@
-*slimv.txt*                    Slimv                 Last Change: 21 Feb 2009
+*slimv.txt*                    Slimv                 Last Change: 28 Feb 2009
 
 Slimv                                                                  *slimv*
-                               Version 0.1.4
+                               Version 0.2.0
 
 The Superior Lisp Interaction Mode for Vim.
 This plugin is aimed to help Lisp development by interfacing between Vim and
@@ -10,7 +10,7 @@ the Lisp REPL, similarly to Emacs/SLIME.
 |slimv-installation|         Installation
 |slimv-customization|        Customization
 |slimv-usage|                Usage
-|slimv-functions|            Function Reference
+|slimv-repl|                 Lisp REPL inside Vim
 |slimv-faq|                  Frequently Asked Questions
 |slimv-changelog|            Change Log
 |slimv-issues|               Known Issues
@@ -22,12 +22,13 @@ This plugin is only available if 'compatible' is not set.
 
 {Vi does not have any of this}
 
-==============================================================================
-INSTALLATION                                              *slimv-installation*
+===============================================================================
+INSTALLATION                                               *slimv-installation*
 
 Prerequisites:
   - Lisp (any Common Lisp implementation should be OK) installed.
   - Python 2.4 or later installed.
+  - The interrupt functionality needs the pywin32 extension on Windows.
 
 To install the script:
   - Download the slimv.zip.
@@ -58,7 +59,47 @@ CUSTOMIZATION                                             *slimv-customization*
 -------------------------------------------------------------------------------
                                                                 *slimv_options*
 
-Note: Most options below require to restart the Vim session when modified.
+The list below contains an alphabetical collection of Slimv options.
+Below that list follows the detailed explanation on each option.
+
+|g:slimv_client|             The whole OS command to start the Slimv client.
+                             Used for advanced customization, like changing
+                             the terminal emulator to use for the Lisp REPL.
+
+|g:slimv_debug|              Debug log level. Set zero for no debug messages.
+
+|g:slimv_debug_client|       Display the command to start client.
+
+|g:slimv_keybindings|        Predefined Slimv keybindings. Possible values:
+                             1 = set #1, 2 = set #2, other = no keybindings
+
+|g:slimv_lisp|               Path for the Lisp interpreter.
+
+|g:slimv_logfile|            Name of the logfile to use for debug messages.
+                             Also see |g:slimv_debug|.
+
+|g:slimv_menu|               If nonzero, Slimv menu is added to the Vim menu
+
+|g:slimv_port|               TCP/IP port number to use in the Slimv client-
+                             server communication.
+
+|g:slimv_python|             Path for the Python interpreter.
+
+|g:slimv_repl_dir|           Directory path for the Lisp REPL buffer file.
+
+|g:slimv_repl_file|          Filename without path for the REPL buffer file.
+
+|g:slimv_repl_open|          If nonzero, Slimv opens the Lisp REPL buffer
+                             inside Vim when the server is started.
+
+|g:slimv_repl_split|         Open the Lisp REPL buffer in a split window
+                             or in a separate buffer.
+
+|g:slimv_repl_wait|          Number of seconds to wait for the REPL output
+                             to finish. Zero means inifinity.
+
+
+Note: Most options require to restart the Vim session when modified.
 
 Slimv tries to autodetect the Python and Lisp installation directories,
 however the algorithm is not very sophisticated.
@@ -93,33 +134,37 @@ Example:
     let g:slimv_port = 10101
 
                                                                *g:slimv_client*
-You may want to use a shell frontend other then the default one or put
-additional command line parameters for starting the server.
+You may want to use a shell frontend other then the default one (cmd.exe
+on Windows, xterm on Linux) or put additional command line parameters
+for starting the server.
 In this case you can omit the variables above and use g:slimv_client instead.
 This is the complete command that is used to start the client. If not set
 by the user, this is automatically built from the variables above.
 
-The command format is the following:
-    <python> <slimv> -p <port> -r <server_cmd> -f <file_to_REPL>
+The command format is the following (items in [] are optional):
+    <python> <slimv> [-p <port>] -r "<server_cmd>"
 Where:
     <python>       is the command to start the Python interpreter
     <slimv>        is the path of Slimv.py
     <port>         is the port number to use (if other than default)
     <server_cmd>   is the command to start the server
-    <file_to_REPL> is the file containing Lisp forms to be sent to the REPL
 
-The format of <server_cmd> is the following:
-    <python> <slimv> -l <lisp> -s
+The format of <server_cmd> is the following (please remember to enclose the
+whole command in double quotes, as this will be passed as one parameter
+to the client):
+    [<terminal>] <python> <slimv> -l <lisp> -s
 Where:
+    <terminal>     is the command to open a new terminal window
     <python>       is the command to start the Python interpreter
     <slimv>        is the path of Slimv.py
     <lisp>         is the command to start the Lisp REPL
 You can also pass the following shortcuts in <server_cmd>:
     @p             equals <python>
     @s             equals <slimv>
-    @l             equals <lisp>
     @@             use it if you need to insert an @ character
     \"             use it to insert a " character
+So <server_cmd> can be rewritten in this shorter form:
+    [<terminal>] @p @s -l <lisp> -s
 
 The reason behind the duplication of the <python> and <slimv> part is that
 you may want to start the server/REPL in a shell frontend that needs
@@ -131,7 +176,7 @@ Note: Remember to escape with a \ all " characters that are supposed to be
       inside a command line argument, otherwise the argument will be split
       by the shell.
 
-Example to start the Slimv server via Console:
+Example to start the Slimv server via Console on Windows:
 
   let g:slimv_client = 
   \ 'python slimv.py -p 5152 -r "console -r \"/k @p @s -l clisp -s\""'
@@ -140,26 +185,79 @@ So the server will be started as if we typed at the command line:
 
   console -r "/k python slimv.py -l clisp -s"
 
+A similar situation is if you want to use a terminal program other than
+xterm on Linux (e.g. Konsole). A typical g:slimv_client setup can be on
+Linux for xterm:
+
+  let g:slimv_client =
+  \ 'python ~/.vim/plugin/slimv.py -r "xterm -T Slimv -e @p @s -l clisp -s"'
+
+And this can be for Konsole:
+
+  let g:slimv_client =
+  \ 'python ~/.vim/plugin/slimv.py -r "konsole -T Slimv -e @p @s -l clisp -s"'
+
                                                                 *g:slimv_debug*
 Defines the debug log level. Level 0 means no debug messages at all. The debug
 messages go into the logfile defined by |slimv-logfile|.
 
                                                          *g:slimv_debug_client*
-Set this to nonzero only if you want to keep the Slimv client window open.
-Currently works only on Windows.
+Set this to nonzero if you want to make Vim display the command used to start
+the client and any occurrent error messages. This also makes Slimv keep the
+Slimv client window open on Windows. This setting is useful to debug problems
+when setting up a custom |g:slimv_client| command.
 
                                                               *g:slimv_logfile*
 Name of the Slimv logfile. Defaults to slimv.log.
+Used only when |g:slimv_debug| level is nonzero.
 
                                                           *g:slimv_keybindings*
 Defines the keybinding set used by Slimv. Value 0 means no keybinding at all.
 Value 1 defines the short keybinding with one-key bindings (after <Leader>).
 Value 2 defines the easy keybinding with two-key bindings (after <Leader>).
 Other values mean no predefined keybinding is wanted.
+The <Leader> is set to ',' by default. 
 
                                                                  *g:slimv_menu*
-If nonzero then the Slimv menu us added to the end of the global menu.
+If nonzero then the Slimv menu is added to the end of the global menu.
 Also the Slimv menu can be shown by pressing <Leader>, (defaults to ,,).
+
+
+                                                             *g:slimv_repl_dir*
+Directory path for the Lisp REPL buffer file. By default this is a directory
+for temporary files, something like /tmp/ on Linux or
+"C:\Documents and Settings\Username\Local Settings\Temp\" on Windows.
+The directory name must end with the pathname separator (/ or \).
+See also |g:slimv_repl_file|.
+
+                                                            *g:slimv_repl_file*
+The Lisp REPL output is written to a temporary file by the Slimv server.
+|g:slimv_repl_file| defines the filename part of the REPL output file without
+the directory path. The complete REPL filename is built from
+|g:slimv_repl_dir| and |g:slimv_repl_file|.
+
+                                                            *g:slimv_repl_open*
+Slimv opens the Lisp REPL buffer inside Vim by default when the Slimv server
+is started, so there exist actually two REPL-s with the same contents:
+one inside a Vim buffer and another one as a separate terminal window.
+The reason behind this is that the simulation is not perfect, which is caused
+by the lack of asynchronous update possibilities in Vim. Sometimes the REPL
+buffer is not perfectly updated, this is the case for example when a Lisp
+program is running too long and it has infrequent outputs only.
+In these situations the REPL buffer can be refreshed manually or the
+separate REPL window can be used for checking the output.
+The |g:slimv_repl_open| = 0 option can be used to disable the built-in REPL
+buffer, so that only the separate REPL window is opened.
+
+                                                           *g:slimv_repl_split*
+Open the Lisp REPL buffer in a split window or in a separate buffer in Vim.
+Used only when |g:slimv_repl_open| is nonzero.
+
+                                                            *g:slimv_repl_wait*
+Number of seconds to wait for the REPL output to finish. Zero means inifinity.
+While waiting, the output is displayed continuously. During that time the
+regular Vim commands are not available. For the posssible commands see
+|slimv-repl|.
 
 
 -------------------------------------------------------------------------------
@@ -247,8 +345,6 @@ The default keybindings (g:slimv_keybindings=1) for Slimv are the following:
 
     ,,  Slimv Menu
 
-    ,S  Connect to Server
-
     ,d  Eval Defun
     ,e  Eval Last Expression
     ,E  Pprint Eval Last Expression
@@ -275,13 +371,14 @@ The default keybindings (g:slimv_keybindings=1) for Slimv are the following:
     ,s  Describe Symbol
     ,a  Apropos
 
+    ,S  Connect to Server
+    ,z  Refresh REPL Buffer
+    ,Z  Refresh REPL Now
+
 There is another easy to remember built in keybinding set
 (g:slimv_keybindings=2):
  
     ,,  Slimv Menu
-
-    Connection commands:
-    ,cs  Connect to Server
 
     Evaluation commands:
     ,ed  Eval Defun
@@ -314,9 +411,14 @@ There is another easy to remember built in keybinding set
     ,ds  Describe Symbol
     ,da  Apropos
 
+    REPL commands:
+    ,rc  Connect to Server
+    ,rr  Refresh REPL Buffer
+    ,rn  Refresh REPL Now
 
-==============================================================================
-USAGE                                                            *slimv-usage*
+
+===============================================================================
+USAGE                                                             *slimv-usage*
 
 After proper installation start Vim and load a *.lisp source file into a
 buffer. When the first Slimv command is entered (either from the menu or
@@ -338,6 +440,66 @@ a new one from Vim the same way as before.
 
 
 ===============================================================================
+LISP REPL                                                          *slimv-repl*
+
+The Lisp REPL is displayed as a separate terminal window and also inside a
+Vim buffer. The Lisp REPL buffer is opened when the Slimv server is started.
+The REPL buffer is a more or less regular Vim buffer, all Vim keybindings and
+commands can be used here as well.
+
+There are however some subtle differences. The main idea is that the last line
+in the REPL buffer is a "command line", just like in any REPL. The command
+line usually begins with a prompt, something like "[1] > ". The user types the
+command after the prompt in Insert mode. When Enter (<CR>) is pressed, the
+contents of the command line (which can actually be multiple lines, when
+pasted) is sent to the Lisp REPL for evaluation. It is not allowed to
+backspace before the end of the command line prompt.
+Please remember that this evaluation style is working only in Insert mode,
+in Normal mode the function of <CR> is left unchanged.
+Other areas of the REPL buffer can be used to eval Lisp forms, just like
+from the .lisp source code. So it is possible to move the cursor inside a form
+that was previously eval-ed, make some changes, then eval it again.
+Please note, that after evaluation the REPL buffer is refreshed, so the
+changes made to the form are restored at that location, but the changed form
+will be evaluated at the end of the REPL buffer.
+
+Another difference is the command line history, which can be activated by
+pressing <Up> or <Down> in the command line (also only in Insert mode).
+
+The keys with modified meanings in the Lisp REPL buffer are listed below:
+
+Insert Mode:
+
+    <CR>           Sends the command typed in the last line to the Lisp REPL
+                   for evaluation.
+
+    <BS>           In the last line it deletes characters to the left only
+                   until the end of the Lisp prompt reached.
+
+    <Up>           Brings up the previous command typed and sent to the Lisp
+                   REPL.
+
+    <Down>         Brings up the next command typed and sent to the Lisp REPL.
+
+    <C-X><C-X>     Sends a Ctrl+C (SIGINT) signal to the Lisp REPL (see below).
+
+Normal Mode:
+
+    <C-X>          Sends a Ctrl+C (SIGINT) signal to the Lisp REPL (see below).
+
+While waiting for REPL output:
+
+    <C-X>          Sends a Ctrl+C (SIGINT) signal to the Lisp REPL. Useful for
+                   interrupting a runaway Lisp program from the Lisp REPL
+                   buffer. <C-C> key combination does not seem to work inside
+                   Vim, that is why <C-X> has been choosen.
+
+    <ESC>          Stops waiting for REPL output, returns to regular Vim mode.
+                   It is possible to return to the continuous refresh mode
+                   by selecting the "Refresh REPL Buffer" command.
+
+
+===============================================================================
 FAQ                                                                 *slimv-faq*
 
 - Q: Why is this plugin called 'Slimv'?
@@ -347,10 +509,19 @@ FAQ                                                                 *slimv-faq*
      then I found an (already abandoned) project called 'Slim-Vim' and I did
      not want to interfere with it.
 
-- Q: Why another 'Superior Lisp Mode' if there is already one?
+- Q: Why another 'Superior Lisp Mode' if there is already one (for Emacs)?
 - A: Because many programmers prefer Vim as a program text editor over Emacs,
      including me. I don't want to start a holy war or whatsoever, I'm just
      happy if someone else finds this plugin useful.
+
+- Q: But there are other similar projects for Vim. Why having yet another
+     SLIMxxx for Vim?
+- A: To my knowledge, none of the above mentioned Vim scripts/extensions
+     contain all the functionalities of SLIME (nor does Slimv, to tell the
+     truth). There is room for improvement, so let's keep on working, and
+     then we'll see, which Vim plugin gets the closest to SLIME.
+     In my opinion the main barrier is the lack of asynchronous buffer update
+     in Vim, but this may change in the future.
 
 - Q: How does Slimv work?
 - A: Slimv consists of three parts: Vim plugin, client and server.
@@ -362,7 +533,7 @@ FAQ                                                                 *slimv-faq*
      So the dataflow is like this:
      Vim -> Vim plugin -> Slimv client -> Slimv server -> Lisp REPL
      The plugin resides in 'slimv.vim', the client and the server both
-     reside in 'slimv.py'.
+     located in 'slimv.py'.
 
 - Q: Why is SLIME functionality XYZ missing from Slimv?
 - A: There are two possible reasons:
@@ -394,6 +565,8 @@ FAQ                                                                 *slimv-faq*
 ===============================================================================
 CHANGE LOG                                                    *slimv-changelog*
 
+0.2.0  - Major update: Lisp REPL displayed in a Vim buffer.
+
 0.1.4  - Corrected the delayed display of last line in REPL window on Linux.
        - Ctrl+C is propagated to Lisp REPL, so it is possible to interrupt
          a running program. Does not work however with some Lisp
@@ -412,26 +585,41 @@ CHANGE LOG                                                    *slimv-changelog*
 0.1    - Initial release.
 
 ===============================================================================
-KNOWN ISSUES                                                     *slimv-issues*
+ISSUES, LIMITATIONS, KNOWN BUGS                                  *slimv-issues*
 
 - Needs Vim version 7.0 or above, because of the intensive use of lists.
 - Vim register 's' is used for all form selections, so its original content is
   destroyed.
+- Vim mark 's' is used to mark the end of the REPL buffer, i.e. the beginning
+  of the "command line".
 - (un)profile does not work
 - Needs Python 2.4 or higher (uses the subprocess module)
 - Works only via the Python interpreter, does not work using a Python IDE
   (like IDLE).
+- Sometimes a Python exception happens after a Ctrl-C followed by an EOF
+  (Ctrl-Z or Ctrl-D).
+- REPL buffer refresh on Vim focus gain works only in gvim, not in console vim.
+- REPL buffer refresh sometimes skipped first time after the server Lisp window
+  was just opened.
+- Interruption (Ctrl+C or Ctrl+X) does not work with all Lisp implementations.
+  For example SBCL exits on Windows when receiving Ctrl+C.
 
 ===============================================================================
 TODO                                                               *slimv-todo*
 
-- Rewrite client/server in Lisp, so that no Python would be needed.
-- Add Compile System
-- Add Cross Reference functions
-- Add Profile functions
-- Handle specific REPL output in Vim (like compilation notes)
-- Use a Vim buffer for the REPL. This does not look possible with the current
-  state of Vim, or at least I can not see any easy way to do it.
+- Make the script a lisp filetype plugin.
+- Start client and server separately having two simpler commands for client
+  and server startup, instead of the existing g:slimv_client solution.
+- Implement an own main loop in Vim for the REPL buffer, poll REPL output
+  regularly, handle all Vim keypresses and commands inside the main loop,
+  continuously update the REPL buffer.
+- Rewrite client/server in Lisp, so that no Python would be needed,
+- Or put the (Python) client part back into the .vim script, rewrite only the
+  server part in Lisp.
+- Handle specific REPL output in Vim (like compilation notes).
+- Add Compile System.
+- Add Cross Reference functions.
+- Add Profile functions.
 
 ===============================================================================
 CREDITS                                                         *slimv-credits*

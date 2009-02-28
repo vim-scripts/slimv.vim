@@ -4,8 +4,8 @@
 #
 # Client/Server code for Slimv
 # slimv.py:     Client/Server code for slimv.vim plugin
-# Version:      0.1.4
-# Last Change:  21 Feb 2009
+# Version:      0.2.0
+# Last Change:  28 Feb 2009
 # Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 # License:      This file is placed in the public domain.
 #               No warranty, express or implied.
@@ -60,9 +60,10 @@ def start_server():
     if run_cmd == '':
         # Complex run command not given, build it from the information available
         if mswindows:
-            cmd = [python_path, slimv_path, '-p', str(PORT), '-l', lisp_path, '-s']
+            cmd = []
         else:
-            cmd = ['xterm', '-T', 'Slimv', '-e', python_path, slimv_path, '-p', str(PORT), '-l', lisp_path, '-s']
+            cmd = ['xterm', '-T', 'Slimv', '-e']
+        cmd = cmd + [python_path, slimv_path, '-p', str(PORT), '-l', lisp_path, '-s']
     else:
         cmd = shlex.split(run_cmd)
 
@@ -148,35 +149,51 @@ def client_file( input_filename ):
 ###############################################################################
 
 class repl_buffer:
-    def __init__ ( self ):
+    def __init__ ( self, output_pipe ):
 
-        self.buffer = ''    # Text buffer (display queue) to collect socket input and REPL output
-        self.buflen = 0     # Amount of text currently in the buffer
-        self.sema   = BoundedSemaphore()
+        self.output   = output_pipe
+        self.filename = ''
+        self.buffer   = ''
+        self.sema     = BoundedSemaphore()
                             # Semaphore to synchronize access to the global display queue
 
-    def read_and_display( self, output ):
-        """Read and display lines received in global display queue buffer.
-        """
+    def setfile( self, filename ):
         self.sema.acquire()
-        l = len( self.buffer )
-        while self.buflen < l:
-            try:
-                # Write all lines in the buffer to the display
-                #output.write( self.buffer[self.buflen] )
-                os.write( output.fileno(), self.buffer[self.buflen] )
-                self.buflen = self.buflen + 1
-            except:
-                break
-        self.buffer = ''
-        self.buflen = 0
+        self.filename = filename
         self.sema.release()
 
-    def write( self, text ):
+    def write( self, text, fileonly=False ):
         """Write text into the global display queue buffer.
         """
         self.sema.acquire()
-        self.buffer = self.buffer + text
+        if not fileonly:
+            try:
+                # Write all lines to the display
+                os.write( self.output.fileno(), text )
+            except:
+                pass
+
+        if self.filename != '':
+            tries = 4
+            while tries > 0:
+                try:
+                    file = open( self.filename, 'at' )
+                    try:
+                        #file.write( text )
+                        if self.buffer != '':
+                            # There is output pending
+                            os.write(file.fileno(), self.buffer )
+                            self.buffer = ''
+                        os.write(file.fileno(), text )
+                    finally:
+                        file.close()
+                    tries = 0
+                except:
+                    tries = tries - 1
+        elif len( self.buffer ) < 2000:
+            # No filename supplied, collect output info a buffer until filename is given
+            # We collect only some bytes, then probably no filename will be given at all
+            self.buffer = self.buffer + text
         self.sema.release()
 
 
@@ -184,10 +201,11 @@ class socket_listener( Thread ):
     """Server thread to receive text from the client via socket.
     """
 
-    def __init__ ( self, inp, buffer ):
+    def __init__ ( self, inp, buffer, pid ):
         Thread.__init__( self )
         self.inp = inp
         self.buffer = buffer
+        self.pid = pid
 
     def run( self ):
         global terminate
@@ -224,10 +242,29 @@ class socket_listener( Thread ):
                     except:
                         break
 
-                    # Fork here: write message to the stdin of REPL
-                    # and also write it to the display (display queue buffer)
-                    self.inp.write   ( received + newline )
-                    self.buffer.write( received + newline )
+                    if len(received) >= 7 and received[0:7] == 'SLIMV::':
+                        command = received[7:]
+                        if len(command) >= 9 and command[0:9] == 'INTERRUPT':
+                            try:
+                                if mswindows:
+                                    import win32api
+                                    CTRL_C_EVENT = 0
+                                    win32api.GenerateConsoleCtrlEvent( CTRL_C_EVENT, 0 )
+                                else:
+                                    import signal
+                                    os.kill( self.pid, signal.SIGINT )
+                            except:
+                                # OK, at least we tried
+                                # Go on without interruption
+                                pass
+                        if len(command) >= 8 and command[0:8] == 'OUTPUT::':
+                            output_filename = command[8:]
+                            self.buffer.setfile( output_filename )
+                    else:
+                        # Fork here: write message to the stdin of REPL
+                        # and also write it to the display (display queue buffer)
+                        self.inp.write   ( received + newline )
+                        self.buffer.write( received + newline )
 
             conn.close()
 
@@ -274,29 +311,6 @@ class output_listener( Thread ):
                 break
 
 
-class buffer_listener( Thread ):
-    """Server thread to read and display contents of the output buffer.
-    """
-
-    def __init__ ( self, buffer ):
-        Thread.__init__( self )
-        self.buffer = buffer
-
-    def run( self ):
-        global terminate
-
-        while not terminate:
-            try:
-                # Constantly display messages in the display queue buffer
-                #TODO: it would be better having some wakeup mechanism here
-                time.sleep(0.01)
-                self.buffer.read_and_display( sys.stdout )
-
-            except:
-                # We just ignore any errors here
-                pass
-
-
 def server():
     """Main server routine: starts REPL and helper threads for
        sending and receiving data to/from REPL.
@@ -322,22 +336,19 @@ def server():
     # Start Lisp
     repl = Popen( cmd, stdin=PIPE, stdout=PIPE, stderr=STDOUT )
 
-    buffer = repl_buffer()
+    buffer = repl_buffer( sys.stdout )
 
     # Create and start helper threads
-    sl = socket_listener( repl.stdin, buffer )
+    sl = socket_listener( repl.stdin, buffer, repl.pid )
     sl.start()
     ol = output_listener( repl.stdout, buffer )
     ol.start()
-    bl = buffer_listener( buffer )
-    bl.start()
 
     # Allow Lisp to start, confuse it with some fancy Slimv messages
     sys.stdout.write( ";;; Slimv server is started on port " + str(PORT) + newline )
     sys.stdout.write( ";;; Slimv is spawning REPL..." + newline )
-    time.sleep(0.5)                         # wait for Lisp to start
-    buffer.read_and_display( sys.stdout )   # read Lisp startup messages
-    sys.stdout.write( ";;; Slimv connection established" + newline )
+    time.sleep(0.5)             # wait for Lisp to start
+    #sys.stdout.write( ";;; Slimv connection established" + newline )
 
     # Main server loop
     while not terminate:
@@ -346,7 +357,7 @@ def server():
             # to the stdin of REPL
             text = raw_input()
             repl.stdin.write( text + newline )
-            buffer.write( text + newline )
+            buffer.write( text + newline, True )
         except EOFError:
             # EOF (Ctrl+Z on Windows, Ctrl+D on Linux) pressed?
             terminate = 1
@@ -399,7 +410,7 @@ def usage():
     """Displays program usage information.
     """
     progname = os.path.basename( sys.argv[0] )
-    print 'Usage: ', progname + ' [-d LEVEL] [-s] [-f FILENAME]'
+    print 'Usage: ', progname + ' [-d LEVEL] [-s] [-f INFILE]'
     print
     print 'Options:'
     print '  -?, -h, --help                show this help message and exit'
@@ -425,7 +436,6 @@ if __name__ == '__main__':
     slimv_path = sys.argv[0]
     python_path = sys.executable
     input_filename = ''
-
 
     # Always this trouble with the path/filenames containing spaces:
     # enclose them in double quotes

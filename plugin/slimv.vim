@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.1.4
-" Last Change:  21 Feb 2009
+" Version:      0.2.0
+" Last Change:  28 Feb 2009
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -155,20 +155,26 @@ function! SlimvMakeClientCommand()
         " We don't have enough information to build client command
         return ''
     endif
-    if g:slimv_port == 5151
-        let port = ''
-    else
-        " Using port number other than default, must pass it to client
-        let port = ' -p ' . g:slimv_port
-    endif
+
+    " Start with the Python path
+    let cmd = g:slimv_python
+
+    " Add path of Slimv script, on Windows enclose in double quotes
     if g:slimv_windows
-        return g:slimv_python . ' "' . g:slimv_path . '"' . port  . ' -l ' . g:slimv_lisp
-        " This one can be used to start Lisp in a 'Console' window
-        " instead of the default DOS box
-        "return g:slimv_python . ' "' . g:slimv_path . '"' . port . ' -r ' .
-        "       \ '"console -w Slimv -r \"/k @p @s -l ' . g:slimv_lisp . ' -s\""'
+        let cmd = cmd . ' "' . g:slimv_path . '"'
     else
-        return g:slimv_python . ' ' . g:slimv_path . port . ' -l ' . g:slimv_lisp
+        let cmd = cmd . ' ' . g:slimv_path
+    endif
+
+    " Add port number if different from default
+    if g:slimv_port != 5151
+        let cmd = cmd . ' -p ' . g:slimv_port
+    endif
+
+    " Add Lisp path
+    let cmd = cmd . ' -l ' . g:slimv_lisp
+
+    return cmd
 endfunction
 
 function! SlimvClientCommand()
@@ -204,6 +210,11 @@ function! SlimvLogGlobals()
     call add( info,  printf( 'g:slimv_python        = %s',    g:slimv_python ) )
     call add( info,  printf( 'g:slimv_lisp          = %s',    g:slimv_lisp ) )
     call add( info,  printf( 'g:slimv_client        = %s',    g:slimv_client ) )
+    call add( info,  printf( 'g:slimv_repl_open     = %d',    g:slimv_repl_open ) )
+    call add( info,  printf( 'g:slimv_repl_dir      = %s',    g:slimv_repl_dir ) )
+    call add( info,  printf( 'g:slimv_repl_file     = %s',    g:slimv_repl_file ) )
+    call add( info,  printf( 'g:slimv_repl_split    = %d',    g:slimv_repl_split ) )
+    call add( info,  printf( 'g:slimv_repl_wait     = %d',    g:slimv_repl_wait ) )
     call add( info,  printf( 'g:slimv_keybindings   = %d',    g:slimv_keybindings ) )
     call add( info,  printf( 'g:slimv_menu          = %d',    g:slimv_menu ) )
     call SlimvLog( 1, info )
@@ -247,11 +258,34 @@ if !exists( 'g:slimv_lisp' )
     let g:slimv_lisp = SlimvAutodetectLisp()
 endif
 
-" Name of the REPL buffer inside Vim
-if !exists( 'g:slimv_repl_name' )
-    let g:slimv_repl_name = 'Slimv.REPL'
+" Open a REPL buffer inside Vim?
+if !exists( 'g:slimv_repl_open' )
+    let g:slimv_repl_open = 1
 endif
 
+" Directory name for the REPL buffer file
+if !exists( 'g:slimv_repl_dir' )
+    if g:slimv_windows
+        let g:slimv_repl_dir = matchstr( tempname(), '.*\\' )
+    else
+        let g:slimv_repl_dir = '/tmp/'
+    endif
+endif
+
+" Filename for the REPL buffer file
+if !exists( 'g:slimv_repl_file' )
+    let g:slimv_repl_file = 'Slimv.REPL'
+endif
+
+" Shall we open REPL buffer in split window?
+if !exists( 'g:slimv_repl_split' )
+    let g:slimv_repl_split = 1
+endif
+
+" How many seconds to wait for the REPL output to finish?
+if !exists( 'g:slimv_repl_wait' )
+    let g:slimv_repl_wait = 10
+endif
 
 " Build client command (if not given in vimrc)
 if !exists( 'g:slimv_client' )
@@ -341,33 +375,154 @@ endif
 
 
 " =====================================================================
+"  Other non-global script variables
+" =====================================================================
+
+" Name of the REPL buffer inside Vim
+let s:repl_name = g:slimv_repl_dir . g:slimv_repl_file
+
+" Lisp prompt in the last line
+let s:prompt = ''
+
+
+" =====================================================================
 "  General utility functions
 " =====================================================================
+
+" Position the cursor at the end of the REPL buffer
+" Optionally mark this position in Vim mark 's'
+function! SlimvEndOfReplBuffer( markit )
+    if !g:slimv_repl_open
+	" User does not want to display REPL in Vim
+	return
+    endif
+    normal G$
+    if a:markit
+        " Remember the end of the buffer: user may enter commands here
+        " Also remember the prompt, because the user may overwrite it
+        call setpos( "'s'", [0, line('$'), col('$'), 0] )
+        let s:prompt = getline( "'s'" )
+    endif
+    set nomodified
+endfunction
+
+" Reload the contents of the REPL buffer from the output file immediately
+function! SlimvRefreshReplBufferNow()
+    if !g:slimv_repl_open
+	" User does not want to display REPL in Vim
+	return
+    endif
+
+    "TODO: on error do this in a loop a couple of times
+    try
+        execute "silent edit! " . s:repl_name
+    catch /.*/
+        " Oops, something went wrong, let's try again after a short pause
+        sleep 1
+        execute "silent edit! " . s:repl_name
+    endtry
+    "TODO: use :read instead and keep only the delta in the readout file
+    if &endofline == 1
+        " Handle the situation when the last line is an empty line in REPL
+        " but Vim rejects to handle it as a separate line
+        call append( '$', "" )
+    endif
+    call SlimvEndOfReplBuffer( 1 )
+endfunction
+
+" Refresh REPL buffer continuously until no change is detected
+function! SlimvRefreshReplBuffer()
+    if !g:slimv_repl_open
+	" User does not want to display REPL in Vim
+	return
+    endif
+
+    " Refresh REPL buffer for a while until no change is detected
+    let lastline = line("$")
+    sleep 500m
+    call SlimvRefreshReplBufferNow()
+    let wait = g:slimv_repl_wait * 10   " number of cycles to wait for refreshing the REPL buffer
+    while line("$") > lastline && ( wait > 0 || g:slimv_repl_wait == 0 )
+        "TODO: Implement a custom main loop here, handling all Vim keypresses and commands
+        if getchar(1)
+            let c = getchar(0)
+            if c == 24
+                " Ctrl+B or Ctrl+C or Ctrl+X or Ctrl+Y pressed
+                call SlimvSend( ['SLIMV::INTERRUPT'], 0 )
+                let wait = g:slimv_repl_wait * 10
+            endif
+            if c == 27
+                " ESC pressed
+                let wait = 0
+                break
+            endif
+        endif
+        redraw
+        let lastline = line("$")
+        "TODO: customize the delay
+        sleep 100m
+        call SlimvRefreshReplBufferNow()
+        let wait = wait - 1
+    endwhile
+
+    if wait == 0
+        " Time is up and Lisp REPL still did not finish output
+        " Inform user about this and about the non-blocking and blocking refresh keys
+        if g:slimv_keybindings == 1
+            let refresh = "<Leader>z or <Leader>Z"
+        elseif g:slimv_keybindings == 2
+            let refresh = "<Leader>rw or <Leader>rr"
+        else
+            let refresh = ":call SlimvRefreshReplBuffer()"
+        endif
+        call append( '$', "Slimv warning: REPL is busy, refresh display with " . refresh )
+        call SlimvEndOfReplBuffer( 1 )
+    endif
+endfunction
 
 " Open a new REPL buffer or switch to the existing one
 function! SlimvOpenReplBuffer()
     "TODO: check if this works without 'set hidden'
-    "TODO: add option for split window
-    let repl_buf = bufnr( g:slimv_repl_name )
+    let repl_buf = bufnr( s:repl_name )
     if repl_buf == -1
         " Create a new REPL buffer
-        exe "edit " . g:slimv_repl_name
+        if g:slimv_repl_split
+            execute "split " . s:repl_name
+        else
+            execute "edit " . s:repl_name
+        endif
     else
-        " REPL buffer is already created. Check if it is open in a window
-        let repl_win = bufwinnr( repl_buf )
-        if repl_win != -1
-            " Switch to the REPL window
-            if winnr() != repl_win
-                exe repl_win . "wincmd w"
+        if g:slimv_repl_split
+            " REPL buffer is already created. Check if it is open in a window
+            let repl_win = bufwinnr( repl_buf )
+            if repl_win == -1
+                " Create windows
+                execute "split +buffer " . repl_buf
+            else
+                " Switch to the REPL window
+                if winnr() != repl_win
+                    execute repl_win . "wincmd w"
+                endif
             endif
         else
-            " Switch to the REPL buffer
-            exe "buffer " . repl_buf
+            execute "buffer " . repl_buf
         endif
     endif
-    
+
     " This buffer will not have an associated file
-    set buftype=nofile
+    inoremap <buffer> <silent> <CR> <End><CR><C-O>:call SlimvHandleCR()<CR>
+    inoremap <buffer> <silent> <expr> <BS> SlimvHandleBS()
+    inoremap <buffer> <silent> <Up> <C-O>:call SlimvHandleUp()<CR>
+    inoremap <buffer> <silent> <Down> <C-O>:call SlimvHandleDown()<CR>
+    noremap  <buffer> <silent> <C-X> :call SlimvHandleInterrupt()<CR>
+    inoremap <buffer> <silent> <C-X><C-X> <C-O>:call SlimvHandleInterrupt()<CR>
+    execute "au FileChangedShell " . g:slimv_repl_file . " :call SlimvRefreshReplBufferNow()"
+    execute "au FocusGained "      . g:slimv_repl_file . " :call SlimvRefreshReplBufferNow()"
+
+    redraw
+
+    call SlimvSend( ['SLIMV::OUTPUT::' . s:repl_name ], 0 )
+    call SlimvEndOfReplBuffer( 0 )
 endfunction
 
 " Select symbol under cursor and copy it to register 's'
@@ -401,22 +556,30 @@ function! SlimvGetSelection()
 endfunction
 
 " Send argument to Lisp server for evaluation
-function! SlimvEval( args )
+function! SlimvSend( args, open_buffer )
     call SlimvClientCommand()
     if g:slimv_client == ''
         return
     endif
 
+    if a:open_buffer
+        call SlimvOpenReplBuffer()
+    endif
+
+    " Build a temporary file from the form to be evaluated
+    let ar = []
+    let i = 0
+    while i < len( a:args )
+        call extend( ar, split( a:args[i], '\n' ) )
+        let i = i + 1
+    endwhile
+
     let tmp = tempname()
     try
-        let ar = []
-        let i = 0
-        while i < len( a:args )
-            call extend( ar, split( a:args[i], '\n' ) )
-            let i = i + 1
-        endwhile
         call SlimvLog( 2, a:args )
         call writefile( ar, tmp )
+
+        " Send the file to the client for evaluation
         if g:slimv_debug_client == 0
             let result = system( g:slimv_client . ' -f ' . tmp )
         else
@@ -425,12 +588,153 @@ function! SlimvEval( args )
     finally
         call delete(tmp)
     endtry
+
+    if a:open_buffer
+        call SlimvRefreshReplBuffer()
+    endif
+endfunction
+
+" Eval arguments in Lisp REPL
+function! SlimvEval( args )
+    call SlimvSend( a:args, g:slimv_repl_open )
+endfunction
+
+" Recall command from the command history at the marked position
+function! SlimvSetCommandLine( cmd )
+    normal `s
+    let line = getline( "." )
+    if len( line ) > col( "'s" )
+        let line = strpart( line, 0, col( "'s" ) - 1 )
+    endif
+    let i = 0
+    let line = line . a:cmd
+    call setline( ".", line )
+    call SlimvEndOfReplBuffer( 0 )
+endfunction
+
+" Add command list to the command history
+function! SlimvAddHistory( cmd )
+    if !exists( 'g:slimv_cmdhistory' )
+        let g:slimv_cmdhistory = []
+    endif
+    let i = 0
+    while i < len( a:cmd )
+        call add( g:slimv_cmdhistory, a:cmd[i] )
+        let i = i + 1
+    endwhile
+    let g:slimv_cmdhistorypos = len( g:slimv_cmdhistory )
+endfunction
+
+" Recall command from the command history at the marked position
+function! SlimvRecallHistory()
+    if g:slimv_cmdhistorypos >= 0 && g:slimv_cmdhistorypos < len( g:slimv_cmdhistory )
+        call SlimvSetCommandLine( g:slimv_cmdhistory[g:slimv_cmdhistorypos] )
+    else
+        call SlimvSetCommandLine( "" )
+    endif
+endfunction
+
+" Handle insert mode 'Enter' keypress in the REPL buffer
+function! SlimvHandleCR()
+    let lastline = line( "'s" )
+    let lastcol  =  col( "'s" )
+    if lastline > 0
+        if line( "." ) >= lastline
+            " Trim the prompt from the beginning of the command line
+            " The user might have overwritten some parts of the prompt
+            let cmdline = getline( lastline )
+            let c = 0
+            while c < lastcol - 1 && cmdline[c] == s:prompt[c]
+                let c = c + 1
+            endwhile
+            let cmd = [ strpart( getline( lastline ), c ) ]
+
+            " Build a possible multi-line command
+            let l = lastline + 1
+            while l <= line("$") - 1
+                call add( cmd, strpart( getline( l ), 0) )
+                let l = l + 1
+            endwhile
+
+            " Evaluate the command
+            call SlimvAddHistory( cmd )
+            call SlimvEval( cmd )
+        endif
+    else
+        call append( '$', "Slimv error: previous EOF mark not found, re-enter last form:" )
+        call append( '$', "" )
+        call SlimvEndOfReplBuffer( 1 )
+    endif
+endfunction
+
+" Handle insert mode 'Backspace' keypress in the REPL buffer
+function! SlimvHandleBS()
+    if line( "." ) == line( "'s" ) && col( "." ) <= col( "'s" )
+        " No BS allowed before the previous EOF mark
+        return ""
+    else
+        return "\<BS>"
+    endif
+endfunction
+
+" Handle insert mode 'Up' keypress in the REPL buffer
+function! SlimvHandleUp()
+    if exists( 'g:slimv_cmdhistory' ) && line( "." ) == line( "'s" )
+        if g:slimv_cmdhistorypos > 0
+            let g:slimv_cmdhistorypos = g:slimv_cmdhistorypos - 1
+            call SlimvRecallHistory()
+        endif
+    endif
+endfunction
+
+" Handle insert mode 'Down' keypress in the REPL buffer
+function! SlimvHandleDown()
+    if exists( 'g:slimv_cmdhistory' ) && line( "." ) == line( "'s" )
+        if g:slimv_cmdhistorypos < len( g:slimv_cmdhistory )
+            let g:slimv_cmdhistorypos = g:slimv_cmdhistorypos + 1
+            call SlimvRecallHistory()
+        else
+            call SlimvSetCommandLine( "" )
+        endif
+    endif
+endfunction
+
+" Handle insert mode 'Down' keypress in the REPL buffer
+function! SlimvHandleInterrupt()
+    call SlimvSend( ['SLIMV::INTERRUPT'], 0 )
+    call SlimvRefreshReplBuffer()
 endfunction
 
 " Start and connect slimv server
 " This is a quite dummy function that just evaluates a comment
 function! SlimvConnectServer()
-    call SlimvEval([';;; Slimv client connected successfully'])
+    call SlimvEval( [';;; Slimv client connected successfully'] )
+endfunction
+
+" Refresh REPL buffer continuously
+function! SlimvRefresh()
+    if bufnr( s:repl_name ) == -1
+        " REPL not opened, no need to refresh
+        return
+    endif
+    if bufnr( s:repl_name ) != bufnr( "%" )
+        " REPL is not the current window, activate it
+        call SlimvOpenReplBuffer()
+    endif
+    call SlimvRefreshReplBuffer()
+endfunction
+
+" Refresh REPL buffer continuously
+function! SlimvRefreshNow()
+    if bufnr( s:repl_name ) == -1
+        " REPL not opened, no need to refresh
+        return
+    endif
+    if bufnr( s:repl_name ) != bufnr( "%" )
+        " REPL is not the current window, activate it
+        call SlimvOpenReplBuffer()
+    endif
+    call SlimvRefreshReplBufferNow()
 endfunction
 
 " Get the last region (visual block)
@@ -667,8 +971,6 @@ endfunction
 if g:slimv_keybindings == 1
     " Short (one-key) keybinding set
 
-    noremap <Leader>S  :call SlimvConnectServer()<CR>
-    
     noremap <Leader>d  :<C-U>call SlimvEvalDefun()<CR>
     noremap <Leader>e  :<C-U>call SlimvEvalLastExp()<CR>
     noremap <Leader>E  :<C-U>call SlimvPprintEvalLastExp()<CR>
@@ -695,12 +997,13 @@ if g:slimv_keybindings == 1
     noremap <Leader>s  :call SlimvDescribeSymbol()<CR>
     noremap <Leader>a  :call SlimvApropos()<CR>
 
+    noremap <Leader>S  :call SlimvConnectServer()<CR>
+    noremap <Leader>z  :call SlimvRefresh()<CR>
+    noremap <Leader>Z  :call SlimvRefreshNow()<CR>
+    
 elseif g:slimv_keybindings == 2
     " Easy to remember (two-key) keybinding set
 
-    " Connection commands
-    noremap <Leader>cs  :call SlimvConnectServer()<CR>
-    
     " Evaluation commands
     noremap <Leader>ed  :<C-U>call SlimvEvalDefun()<CR>
     noremap <Leader>ee  :<C-U>call SlimvEvalLastExp()<CR>
@@ -732,6 +1035,11 @@ elseif g:slimv_keybindings == 2
     noremap <Leader>ds  :call SlimvDescribeSymbol()<CR>
     noremap <Leader>da  :call SlimvApropos()<CR>
 
+    " REPL commands
+    noremap <Leader>rc  :call SlimvConnectServer()<CR>
+    noremap <Leader>rr  :call SlimvRefresh()<CR>
+    noremap <Leader>rn  :call SlimvRefreshNow()<CR>
+    
 endif
 
 " =====================================================================
@@ -773,5 +1081,9 @@ if g:slimv_menu == 1
     
     menu &Slimv.&Documentation.Describe-&Symbol        :call SlimvDescribeSymbol()<CR>
     menu &Slimv.&Documentation.&Apropos                :call SlimvApropos()<CR>
+    
+    menu &Slimv.&REPL.&Connect-Server                  :call SlimvConnectServer()<CR>
+    menu &Slimv.&REPL.&Refresh                         :call SlimvRefresh()<CR>
+    menu &Slimv.&REPL.&Refresh-Now                     :call SlimvRefreshNow()<CR>
 endif
 
