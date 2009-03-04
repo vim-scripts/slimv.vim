@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.2.0
-" Last Change:  28 Feb 2009
+" Version:      0.2.1
+" Last Change:  04 Mar 2009
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -114,7 +114,7 @@ function! SlimvAutodetectLisp()
     endif
 
     if g:slimv_windows
-        " Try to find Python on the standard installation places
+        " Try to find Lisp on the standard installation places
         let lisps = split( globpath( 'c:/*lisp*,c:/Program Files/*lisp*', '*lisp.exe' ), '\n' )
         if len( lisps ) > 0
             return lisps[0]
@@ -143,10 +143,22 @@ function! SlimvAutodetectLisp()
         if len( lisps ) > 0
             return lisps[0]
         endif
-        return ''
-    else
-        return ''
     endif
+
+    if executable( 'clojure.jar' )
+        " Clojure
+        return '"java -cp clojure.jar clojure.lang.Repl"'
+    endif
+
+    if g:slimv_windows
+        " Try to find Clojure on the standard installation places
+        let lisps = split( globpath( 'c:/*clojure*', 'clojure.jar' ), '\n' )
+        if len( lisps ) > 0
+	    return '"java -cp ' . lisps[0] . ' clojure.lang.Repl"'
+        endif
+    endif
+
+    return ''
 endfunction
 
 " Build the command to start the client
@@ -199,6 +211,22 @@ if !exists( 'g:slimv_path' )
         let g:slimv_path = 'slimv.py'
     endif
 endif
+
+" Get the filetype (Lisp dialect) used by Slimv
+function! SlimvGetFiletype()
+    if exists( 'g:slimv_filetype' )
+	" Return Slimv filetype if defined
+	return g:slimv_filetype
+    endif
+
+    if &ft != ''
+	" Return Vim filetype if defined
+	return &ft
+    endif
+
+    " We have no clue, guess its lisp
+    return 'lisp'
+endfunction
 
 " Log global variables to logfile (if debug log set)
 function! SlimvLogGlobals()
@@ -258,6 +286,13 @@ if !exists( 'g:slimv_lisp' )
     let g:slimv_lisp = SlimvAutodetectLisp()
 endif
 
+" Try to find out if the Lisp dialect used is actually Clojure
+if !exists( 'g:slimv_filetype' )
+    if match( g:slimv_lisp, 'clojure' ) >= 0
+        let g:slimv_filetype = 'clojure'
+    endif
+endif
+
 " Open a REPL buffer inside Vim?
 if !exists( 'g:slimv_repl_open' )
     let g:slimv_repl_open = 1
@@ -308,11 +343,19 @@ endif
 " =====================================================================
 
 if !exists( 'g:slimv_template_pprint' )
-    let g:slimv_template_pprint = '(dolist (o %1)(pprint o))'
+    if SlimvGetFiletype() == 'clojure'
+        let g:slimv_template_pprint = '(doseq [o %1] (println o))'
+    else
+        let g:slimv_template_pprint = '(dolist (o %1)(pprint o))'
+    endif
 endif
 
 if !exists( 'g:slimv_template_undefine' )
-    let g:slimv_template_undefine = '(fmakunbound (read-from-string "%1"))'
+    if SlimvGetFiletype() == 'clojure'
+        let g:slimv_template_undefine = "(ns-unmap 'user '" . "%1)"
+    else
+        let g:slimv_template_undefine = '(fmakunbound (read-from-string "%1"))'
+    endif
 endif
 
 if !exists( 'g:slimv_template_describe' )
@@ -342,19 +385,35 @@ if !exists( 'g:slimv_template_disassemble' )
 endif
 
 if !exists( 'g:slimv_template_inspect' )
-    let g:slimv_template_inspect = '(inspect %1)'
+    if SlimvGetFiletype() == 'clojure'
+        let g:slimv_template_inspect = "(print-doc #'" . "%1)"
+    else
+        let g:slimv_template_inspect = '(inspect %1)'
+    endif
 endif
 
 if !exists( 'g:slimv_template_apropos' )
-    let g:slimv_template_apropos = '(apropos "%1")'
+    if SlimvGetFiletype() == 'clojure'
+        let g:slimv_template_apropos = '(find-doc "%1")'
+    else
+        let g:slimv_template_apropos = '(apropos "%1")'
+    endif
 endif
 
 if !exists( 'g:slimv_template_macroexpand' )
-    let g:slimv_template_macroexpand = '(pprint %1)'
+    if SlimvGetFiletype() == 'clojure'
+        let g:slimv_template_macroexpand = '%1'
+    else
+        let g:slimv_template_macroexpand = '(pprint %1)'
+    endif
 endif
 
 if !exists( 'g:slimv_template_macroexpand_all' )
-    let g:slimv_template_macroexpand_all = '(pprint %1)'
+    if SlimvGetFiletype() == 'clojure'
+        let g:slimv_template_macroexpand_all = '%1'
+    else
+        let g:slimv_template_macroexpand_all = '(pprint %1)'
+    endif
 endif
 
 if !exists( 'g:slimv_template_compile_file' )
@@ -411,6 +470,11 @@ function! SlimvRefreshReplBufferNow()
     if !g:slimv_repl_open
 	" User does not want to display REPL in Vim
 	return
+    endif
+
+    if bufnr( s:repl_name ) != bufnr( "%" )
+        " REPL is not the actual buffer
+        return
     endif
 
     "TODO: on error do this in a loop a couple of times
@@ -518,6 +582,7 @@ function! SlimvOpenReplBuffer()
     inoremap <buffer> <silent> <C-X><C-X> <C-O>:call SlimvHandleInterrupt()<CR>
     execute "au FileChangedShell " . g:slimv_repl_file . " :call SlimvRefreshReplBufferNow()"
     execute "au FocusGained "      . g:slimv_repl_file . " :call SlimvRefreshReplBufferNow()"
+    execute "au BufEnter "         . g:slimv_repl_file . " :call SlimvRefreshReplBufferNow()"
 
     redraw
 
@@ -780,7 +845,7 @@ endfunction
 " %1 string is substituted with par1
 function! SlimvEvalForm1( template, par1 )
     let p1 = escape( a:par1, '&' )
-    let p1 = escape( p1, '\\' )
+    "let p1 = escape( p1, '\\' )
     let temp1 = substitute( a:template, '%1', p1, 'g' )
     let lines = [temp1]
     call SlimvEval( lines )
@@ -792,8 +857,8 @@ endfunction
 function! SlimvEvalForm2( template, par1, par2 )
     let p1 = escape( a:par1, '&' )
     let p2 = escape( a:par2, '&' )
-    let p1 = escape( p1, '\\' )
-    let p2 = escape( p2, '\\' )
+    "let p1 = escape( p1, '\\' )
+    "let p2 = escape( p2, '\\' )
     let temp1 = substitute( a:template, '%1', p1, 'g' )
     let temp2 = substitute( temp1,      '%2', p2, 'g' )
     let lines = [temp2]
@@ -845,19 +910,53 @@ endfunction
 
 " ---------------------------------------------------------------------
 
+" General part of the various macroexpand functions
+function! SlimvMacroexpandGeneral( command )
+    normal 99[(
+    let line = getline( "." )
+    if match( line, 'defmacro' ) < 0
+        " The form does not contain 'defmacro', put it in a macroexpand block
+        call SlimvSelectForm()
+        let m = "(" . a:command . " '" . SlimvGetSelection() . ")"
+    else
+        " The form is a 'defmacro', so do a macroexpand from the macro name and parameters
+        if SlimvGetFiletype() == 'clojure'
+            normal vt[%"sy
+        else
+            normal vt(%"sy
+        endif
+        let m = SlimvGetSelection()
+        if m[ len(m) - 1 ] == ']' || m[ len(m) - 1 ] == ')'
+            " Some Vim configs include the trailing ']' here, others don't
+            " TODO: check out why
+            let m = strpart( m, 0, len(m) - 1 )
+        endif
+        let m = m . '))'
+        let m = substitute( m, "defmacro\\s*", a:command . " '(", 'g' )
+        if SlimvGetFiletype() == 'clojure'
+            " Remove opening bracket from the parameter list
+	    " TODO: fix this for multi-line macro header
+            let m = substitute( m, "\\[\\(.*\\)", "\\1", 'g' )
+	else
+            " Remove opening brace from the parameter list
+	    " The nice regular expression below says: remove the third '('
+	    " ( + something + ( + something + ( + something -> ( + something + ( + something + something
+	    " TODO: fix this for multi-line macro header
+            let m = substitute( m, "\\(([^()]*([^()]*\\)(\\(.*\\)", "\\1\\2", 'g' )
+        endif
+    endif
+    return m
+endfunction
+
 " Macroexpand-1 the current top level form
 function! SlimvMacroexpand()
-    normal 99[(vt(%"sy
-    let m = SlimvGetSelection() . '))'
-    let m = substitute( m, "defmacro\\s*", "macroexpand-1 '(", 'g' )
+    let m = SlimvMacroexpandGeneral( "macroexpand-1" )
     call SlimvEvalForm1( g:slimv_template_macroexpand, m )
 endfunction
 
 " Macroexpand the current top level form
 function! SlimvMacroexpandAll()
-    normal 99[(vt(%"sy
-    let m = SlimvGetSelection() . '))'
-    let m = substitute( m, "defmacro\\s*", "macroexpand '(", 'g' )
+    let m = SlimvMacroexpandGeneral( "macroexpand" )
     call SlimvEvalForm1( g:slimv_template_macroexpand_all, m )
 endfunction
 
