@@ -1,7 +1,7 @@
-*slimv.txt*                    Slimv                 Last Change: 08 Mar 2009
+*slimv.txt*                    Slimv                 Last Change: 16 Mar 2009
 
 Slimv                                                                  *slimv*
-                               Version 0.2.2
+                               Version 0.3.0
 
 The Superior Lisp Interaction Mode for Vim.
 This plugin is aimed to help Lisp development by interfacing between Vim and
@@ -12,6 +12,7 @@ the Lisp REPL, similarly to Emacs/SLIME.
 |slimv-usage|                Usage
 |slimv-repl|                 Lisp REPL inside Vim
 |slimv-clojure|              Clojure support
+|slimv-external|             External utilities
 |slimv-faq|                  Frequently Asked Questions
 |slimv-changelog|            Change Log
 |slimv-issues|               Known Issues
@@ -27,11 +28,13 @@ This plugin is only available if 'compatible' is not set.
 INSTALLATION                                               *slimv-installation*
 
 Prerequisites:
+
   - Lisp (any Common Lisp implementation should be OK) or Clojure installed.
   - Python 2.4 or later installed.
   - The interrupt functionality needs the pywin32 extension on Windows.
 
 To install the script:
+
   - Download the slimv.zip.
   - Extract the zip archive into your vimfiles or runtime directory.
     See Vim help file |usr_05.txt| for details on adding a plugin.
@@ -48,7 +51,12 @@ To install the script:
     See |slimv-customization| below on how to do this.
 
 Upgrade from previous script versions:
-  No special upgrade actions are required.
+
+0.1   - 0.2.x    Users having a custom |g:slimv_repl_file| setting should
+                 consider attaching the .lisp or .clj extension to the name
+                 of the REPL buffer, in order to have syntax highlighting
+                 and autoindenting in the REPL buffer.
+                 Users who already have done this are smarter than me :)
 
 ===============================================================================
 CUSTOMIZATION                                             *slimv-customization*
@@ -82,7 +90,7 @@ Below that list follows the detailed explanation on each option.
 |g:slimv_logfile|            Name of the logfile to use for debug messages.
                              Also see |g:slimv_debug|.
 
-|g:slimv_menu|               If nonzero, Slimv menu is added to the Vim menu
+|g:slimv_menu|               If nonzero, Slimv menu is added to the Vim menu.
 
 |g:slimv_port|               TCP/IP port number to use in the Slimv client-
                              server communication.
@@ -445,11 +453,11 @@ forms to the server/REPL for processing. That's it.
 All you need to know then is the list of possible Slimv commands, how to
 enter them and under what conditions.
 
-It is possible to interrupt a running Lisp program by pressing Ctrl+C,
+It is possible to interrupt a running Lisp program by pressing Ctrl-C,
 at least in some Lisp implementations, like CLISP (does not work for example
 with SBCL).
 
-To end the Lisp session press EOF (Ctrl+D on Linux, Ctrl+Z on Windows)
+To end the Lisp session press EOF (Ctrl-D on Linux, Ctrl-Z on Windows)
 in the Lisp REPL window. After exiting the REPL it is possible to open
 a new one from Vim the same way as before.
 
@@ -480,6 +488,8 @@ will be evaluated at the end of the REPL buffer.
 
 Another difference is the command line history, which can be activated by
 pressing <Up> or <Down> in the command line (also only in Insert mode).
+Outside of the command line the <Up> and <Down> keys move the cursor,
+as usual.
 
 The keys with modified meanings in the Lisp REPL buffer are listed below:
 
@@ -492,24 +502,20 @@ Insert Mode:
                    until the end of the Lisp prompt reached.
 
     <Up>           Brings up the previous command typed and sent to the Lisp
-                   REPL.
+                   REPL when in the command line.
 
-    <Down>         Brings up the next command typed and sent to the Lisp REPL.
-
-    <C-X><C-X>     Sends a Ctrl+C (SIGINT) signal to the Lisp REPL (see below).
-
-Normal Mode:
-
-    <C-X>          Sends a Ctrl+C (SIGINT) signal to the Lisp REPL (see below).
+    <Down>         Brings up the next command typed and sent to the Lisp REPL
+                   when in the command line.
 
 While waiting for REPL output:
 
-    <C-X>          Sends a Ctrl+C (SIGINT) signal to the Lisp REPL. Useful for
+    CTRL-C         Sends a Ctrl-C (SIGINT) signal to the Lisp REPL. Useful for
                    interrupting a runaway Lisp program from the Lisp REPL
-                   buffer. <C-C> key combination does not seem to work inside
-                   Vim, that is why <C-X> has been choosen.
+                   buffer.
 
-    <ESC>          Stops waiting for REPL output, returns to regular Vim mode.
+    any other key  Stops waiting for REPL output, returns to regular Vim mode.
+                   The key that was pressed is translated and processed by Vim,
+                   according to current the Vim mode.
                    It is possible to return to the continuous refresh mode
                    by selecting the "Refresh REPL Buffer" command.
 
@@ -544,6 +550,101 @@ which can be set up this way:
 
 
 ===============================================================================
+EXTERNAL UTILITIES                                             *slimv-external*
+
+This section is about utilities, settings, etc., not related strongly to Slimv,
+but may be used to aim Lisp development. These are mostly built-in Vim features
+or options, and sometimes external Vim plugins.
+Slimv does not want to copy these functionalities, if they exist and work well.
+
+
+1. Syntax highlighting
+
+The syntax highlighting is done via the default lisp.vim syntax plugin.
+For Clojure files one has two options:
+a. use the Lisp filetype also for Clojure files (that approach is used by Slimv
+   for the REPL buffer if no other filetype is set)
+b. install a Clojure Vim syntax plugin, like VimClojure.
+
+
+2. Indentation
+
+The indentation is also done via the default lisp.vim indent plugin, or an
+optionally installed Clojure indent plugin, just like for the syntax
+highlighting.
+There are some built-in Vim reindentation commands that may come very handy
+when editing Lisp files. One can define a custom key mapping for any of them,
+such mappings are not defined by Slimv.
+
+    =                       Reindent selection, after a text has been selected.
+
+    ==                      Reindent current line.
+
+    [(v%=                   Select current form and reindent it.
+
+    99[(v%=                 Select top level form and reindent it.
+
+
+3. Parenthesis handling
+
+Vim obtains many tools to aid working with parentheses. This is a very important
+topic for a Lisp programmer.
+
+    :inoremap ( ()<Esc>i    Automatically insert closing paren when an opening
+                            one is inserted.
+
+    :inoremap [ []<Esc>i    Same as above but for brackets.
+
+    :set showmatch          Briefly jump with the cursor to the matching paren
+                            or bracket when a closing pair is inserted.
+
+    %                       Go to the matching paren or bracket.
+
+    :source $VIMRUNTIME/macros/matchit.vim
+                            Adds extended matching with "%" to Vim.
+
+    [(v                     Select current form.
+
+    99[(v                   Select top level form.
+
+    g:lisp_rainbow          Colorize differing levels of parenthesization with
+                            different highlighting. Currently works only for
+                            the 'lisp' filetype, hopefully it will be added
+                            soon to the Clojure plugins as well.
+
+
+4. Completion
+
+    CTRL-N                  The built-in Vim keyword completion is a very handy
+    CTRL-P                  feature. You start typing a word, and when CTRL-P
+                            or CTRL-N is pressed, then Vim looks up the keyword
+                            starting with the same letters as typed in up or
+                            down direction.
+
+    set complete            The |'complete'| option controls how keyword
+                            completion works.
+
+
+5. Tag lookup
+
+    |ctags|                 "Exuberant ctags" is a powerful utility for
+                            generating tag database for different kind of
+			    programming languages, including Lisp. Tag lookup
+                            is then done via the CTRL-] (or :tag) command,
+                            return to the previous positon with CTRL-T.
+
+    ctags --language-force=lisp *.lisp *.clj
+                            This or a similar command may be used to generate
+                            tags file from .lisp and .clj files in a directory.
+
+    :execute '!ctags --language-force=lisp *.lisp *.clj'
+                            This is the same command as the previous one, but
+                            started from inside Vim, rather than from the OS
+                            command prompt, assuming that ctags.exe is stored
+                            in the PATH.
+
+
+===============================================================================
 FAQ                                                                 *slimv-faq*
 
 - Q: Why is this plugin called 'Slimv'?
@@ -562,8 +663,8 @@ FAQ                                                                 *slimv-faq*
      SLIMxxx for Vim?
 - A: To my knowledge, none of the above mentioned Vim scripts/extensions
      contain all the functionalities of SLIME (nor does Slimv, to tell the
-     truth). There is room for improvement, so let's keep on working, and
-     then we'll see, which Vim plugin gets the closest to SLIME.
+     truth). There is definitely room for improvement.
+     It would be nice to make Vim as usable as Emacs for Lisp programming.
      In my opinion the main barrier is the lack of asynchronous buffer update
      in Vim, but this may change in the future.
 
@@ -591,6 +692,12 @@ FAQ                                                                 *slimv-faq*
 - Q: Why is the default port number 5151?
 - A: Hint: what roman numerals are 5,1,5,1? Bingo: VI, doubled.
 
+- Q: What is the version numbering concept?
+- A: <major version>.<minor version>.<bugfix release>, where:
+     major  version: Let's talk about it when it reaches 1...
+     minor  version: New functionalities added, that are worth mentioning.
+     bugfix release: Only bugfixes or tiny additions.
+
 - Q: Are you a Lisp expert?
 - A: No, not at all. I'm just learning Lisp. Also just learning Vim
      scripting. And I'm not a Python expert either, however (at the moment)
@@ -610,10 +717,20 @@ FAQ                                                                 *slimv-faq*
      distributions contain a Python interpreter with high enough version.
      On Windows this means, you need to install Python, if you don't have
      one (at least version 2.4). Anyway, Python is a nice language and
-     also a perfect replacement for calculator.exe :-)
+     also a perfect replacement for calculator.exe :)
 
 ===============================================================================
 CHANGE LOG                                                    *slimv-changelog*
+
+0.3.0  - Added syntax highlighting and automatic indentation for the REPL
+         buffer (needs lisp and/or clojure Vim plugins).
+       - It is possible to enter a multi-line command in the REPL buffer,
+         until the opening and closing parens match.
+       - Insert mode Up and Down keys move cursor when outside of the REPL
+         command line.
+       - Ctrl-C is working inside the REPL buffer (while waiting for output),
+         so Ctrl-X and Ctrl-X Ctrl-X keybindings are removed.
+       - REPL window performance enhancement on Linux.
 
 0.2.2  - Fixed REPL input and output mix-up problems.
        - Evaluation performance enhancement.
@@ -626,7 +743,7 @@ CHANGE LOG                                                    *slimv-changelog*
 0.2.0  - Major update: Lisp REPL displayed in a Vim buffer.
 
 0.1.4  - Corrected the delayed display of last line in REPL window on Linux.
-       - Ctrl+C is propagated to Lisp REPL, so it is possible to interrupt
+       - Ctrl-C is propagated to Lisp REPL, so it is possible to interrupt
          a running program. Does not work however with some Lisp
          implementations (like SBCL).
 
@@ -654,13 +771,11 @@ ISSUES, LIMITATIONS, KNOWN BUGS                                  *slimv-issues*
 - Needs Python 2.4 or higher (uses the subprocess module)
 - Works only via the Python interpreter, does not work using a Python IDE
   (like IDLE).
-- Sometimes a Python exception happens after a Ctrl-C followed by an EOF
-  (Ctrl-Z or Ctrl-D).
+- Sometimes a Python exception happens after a CTRL-C inside the REPL buffer
+  followed by an EOF (CTRL-Z or CTRL-D) in the external REPL window.
 - REPL buffer refresh on Vim focus gain works only in gvim, not in console vim.
-- REPL buffer refresh sometimes skipped first time after the server Lisp window
-  was just opened.
-- Interruption (Ctrl+C or Ctrl+X) does not work with all Lisp implementations.
-  For example SBCL exits on Windows when receiving Ctrl+C.
+- Interruption (Ctrl-C) does not work with all Lisp implementations.
+  For example SBCL exits on Windows when receiving Ctrl-C.
   It does not work in Clojure.
 - There are some functions that are not compatible or simply not working for
   Clojure.
@@ -669,7 +784,7 @@ ISSUES, LIMITATIONS, KNOWN BUGS                                  *slimv-issues*
 ===============================================================================
 TODO                                                               *slimv-todo*
 
-- Make the script a lisp filetype plugin.
+- Make the script a lisp+clojure filetype plugin.
 - Start client and server separately having two simpler commands for client
   and server startup, instead of the existing g:slimv_client solution.
 - Implement an own main loop in Vim for the REPL buffer, poll REPL output
@@ -693,7 +808,7 @@ the world's (one of the) best editor.
 Also special thanks to Eric Marsden and all the Emacs/SLIME developers for
 making SLIME.
 Last but not least many thanks to my wife Andrea (for the Italians out there:
-hey, this is a female name in Hungary :-) for her support and patience.
+hey, this is a female name in Hungary :) for her support and patience.
 
 ===============================================================================
 vim:tw=78:noet:wrap:ts=8:ft=help:norl:

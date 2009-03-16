@@ -4,8 +4,8 @@
 #
 # Client/Server code for Slimv
 # slimv.py:     Client/Server code for slimv.vim plugin
-# Version:      0.2.2
-# Last Change:  08 Mar 2009
+# Version:      0.3.0
+# Last Change:  16 Mar 2009
 # Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 # License:      This file is placed in the public domain.
 #               No warranty, express or implied.
@@ -158,10 +158,22 @@ class repl_buffer:
                             # Semaphore to synchronize access to the global display queue
 
     def setfile( self, filename ):
-        """Set output filename
+        """Set output filename. Greet user if this is the first time.
         """
         self.sema.acquire()
+        oldname = self.filename
         self.filename = filename
+        if oldname == '':
+            self.write_nolock( newline + ';;; Slimv client is connected to REPL on port ' + str(PORT) + '.' + newline, True )
+            user = None
+            if mswindows:
+                user = os.getenv('USERNAME')
+            else:
+                user = os.getenv('USER')
+            if not user:
+                self.write_nolock( ';;; This could be the start of a beautiful program.' + newline + newline, True )
+            else:
+                self.write_nolock( ';;; ' + user + ', this could be the start of a beautiful program.' + newline + newline, True )
         self.sema.release()
 
     def writebegin( self ):
@@ -200,8 +212,11 @@ class repl_buffer:
                     finally:
                         file.close()
                     tries = 0
+                except IOError:
+                    tries = tries - 1
+                    if tries == 0:
+                        traceback.print_exc()
                 except:
-                    #traceback.print_exc()
                     tries = tries - 1
         elif len( self.buffer ) < 2000:
             # No filename supplied, collect output info a buffer until filename is given
@@ -284,8 +299,6 @@ class socket_listener( Thread ):
                         # Fork here: write message to the stdin of REPL
                         # and also write it to the display (display queue buffer)
                         self.buffer.writebegin()
-#                        self.buffer.write_nolock( received + newline )
-#                        self.inp.write( received + newline )
                         self.buffer.write_nolock( received )
                         self.inp.write( received )
                         self.buffer.writeend()
@@ -322,17 +335,10 @@ class output_listener( Thread ):
                     else:
                         self.buffer.write( c )
                 else:
-                    # On Linux set read mode to non blocking
-                    import fcntl, select
-                    flag = fcntl.fcntl(self.out.fileno(), fcntl.F_GETFL)
-                    fcntl.fcntl(self.out.fileno(), fcntl.F_SETFL, flag | os.O_NONBLOCK)
-
-                    r = select.select([self.out.fileno()], [], [], 0)[0]
-                    if r:
-                        c = os.read( self.out.fileno(), 1 )
-                        self.buffer.write( c )
+                    c = self.out.read( 1 )
+                    self.buffer.write( c )
             except:
-                break
+                terminate = 1
 
 
 def server():
@@ -370,7 +376,7 @@ def server():
 
     # Allow Lisp to start, confuse it with some fancy Slimv messages
     sys.stdout.write( ";;; Slimv server is started on port " + str(PORT) + newline )
-    sys.stdout.write( ";;; Slimv is spawning REPL..." + newline )
+    sys.stdout.write( ";;; Slimv is spawning REPL..." + newline + newline )
     time.sleep(0.5)             # wait for Lisp to start
     #sys.stdout.write( ";;; Slimv connection established" + newline )
 
