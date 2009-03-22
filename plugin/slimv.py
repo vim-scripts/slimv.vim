@@ -4,8 +4,8 @@
 #
 # Client/Server code for Slimv
 # slimv.py:     Client/Server code for slimv.vim plugin
-# Version:      0.3.0
-# Last Change:  16 Mar 2009
+# Version:      0.4.0
+# Last Change:  22 Mar 2009
 # Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 # License:      This file is placed in the public domain.
 #               No warranty, express or implied.
@@ -164,6 +164,12 @@ class repl_buffer:
         oldname = self.filename
         self.filename = filename
         if oldname == '':
+            try:
+                # Delete old file creted at a previous run
+                os.remove( self.filename )
+            except:
+                # OK, at least we tried
+                pass
             self.write_nolock( newline + ';;; Slimv client is connected to REPL on port ' + str(PORT) + '.' + newline, True )
             user = None
             if mswindows:
@@ -216,8 +222,10 @@ class repl_buffer:
                     tries = tries - 1
                     if tries == 0:
                         traceback.print_exc()
+                    time.sleep(0.05)
                 except:
                     tries = tries - 1
+                    time.sleep(0.05)
         elif len( self.buffer ) < 2000:
             # No filename supplied, collect output info a buffer until filename is given
             # We collect only some bytes, then probably no filename will be given at all
@@ -263,6 +271,7 @@ class socket_listener( Thread ):
                     if len( lstr ) <= 0:
                         break
                 except:
+                    traceback.print_exc()
                     break
                 if terminate:
                     break
@@ -271,10 +280,16 @@ class socket_listener( Thread ):
                     # Valid length received, now wait for the message
                     try:
                         # Read the message itself
-                        received = conn.recv(l)
+                        received = ''
+                        while len( received ) < l:
+                            r = conn.recv(l)
+                            if len( r ) == 0:
+                                break
+                            received = received + r
                         if len( received ) < l:
                             break
                     except:
+                        traceback.print_exc()
                         break
 
                     if len(received) >= 7 and received[0:7] == 'SLIMV::':

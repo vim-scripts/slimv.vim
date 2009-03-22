@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.3.0
-" Last Change:  15 Mar 2009
+" Version:      0.4.0
+" Last Change:  21 Mar 2009
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -231,20 +231,51 @@ endfunction
 " Log global variables to logfile (if debug log set)
 function! SlimvLogGlobals()
     let info = [ 'Loaded file: ' . fnamemodify( bufname(''), ':p' ) ]
-    call add( info,  printf( 'g:slimv_debug         = %d',    g:slimv_debug ) )
-    call add( info,  printf( 'g:slimv_debug_client  = %d',    g:slimv_debug_client ) )
-    call add( info,  printf( 'g:slimv_logfile       = %s',    g:slimv_logfile ) )
-    call add( info,  printf( 'g:slimv_port          = %d',    g:slimv_port ) )
-    call add( info,  printf( 'g:slimv_python        = %s',    g:slimv_python ) )
-    call add( info,  printf( 'g:slimv_lisp          = %s',    g:slimv_lisp ) )
-    call add( info,  printf( 'g:slimv_client        = %s',    g:slimv_client ) )
-    call add( info,  printf( 'g:slimv_repl_open     = %d',    g:slimv_repl_open ) )
-    call add( info,  printf( 'g:slimv_repl_dir      = %s',    g:slimv_repl_dir ) )
-    call add( info,  printf( 'g:slimv_repl_file     = %s',    g:slimv_repl_file ) )
-    call add( info,  printf( 'g:slimv_repl_split    = %d',    g:slimv_repl_split ) )
-    call add( info,  printf( 'g:slimv_repl_wait     = %d',    g:slimv_repl_wait ) )
-    call add( info,  printf( 'g:slimv_keybindings   = %d',    g:slimv_keybindings ) )
-    call add( info,  printf( 'g:slimv_menu          = %d',    g:slimv_menu ) )
+    if exists( 'g:slimv_debug' )
+        call add( info,  printf( 'g:slimv_debug         = %d',    g:slimv_debug ) )
+    endif
+    if exists( 'g:slimv_debug_client' )
+        call add( info,  printf( 'g:slimv_debug_client  = %d',    g:slimv_debug_client ) )
+    endif
+    if exists( 'g:slimv_logfile' )
+        call add( info,  printf( 'g:slimv_logfile       = %s',    g:slimv_logfile ) )
+    endif
+    if exists( 'g:slimv_port' )
+        call add( info,  printf( 'g:slimv_port          = %d',    g:slimv_port ) )
+    endif
+    if exists( 'g:slimv_python' )
+        call add( info,  printf( 'g:slimv_python        = %s',    g:slimv_python ) )
+    endif
+    if exists( 'g:slimv_lisp' )
+        call add( info,  printf( 'g:slimv_lisp          = %s',    g:slimv_lisp ) )
+    endif
+    if exists( 'g:slimv_client' )
+        call add( info,  printf( 'g:slimv_client        = %s',    g:slimv_client ) )
+    endif
+    if exists( 'g:slimv_repl_open' )
+        call add( info,  printf( 'g:slimv_repl_open     = %d',    g:slimv_repl_open ) )
+    endif
+    if exists( 'g:slimv_repl_dir' )
+        call add( info,  printf( 'g:slimv_repl_dir      = %s',    g:slimv_repl_dir ) )
+    endif
+    if exists( 'g:slimv_repl_file' )
+        call add( info,  printf( 'g:slimv_repl_file     = %s',    g:slimv_repl_file ) )
+    endif
+    if exists( 'g:slimv_repl_split' )
+        call add( info,  printf( 'g:slimv_repl_split    = %d',    g:slimv_repl_split ) )
+    endif
+    if exists( 'g:slimv_repl_wait' )
+        call add( info,  printf( 'g:slimv_repl_wait     = %d',    g:slimv_repl_wait ) )
+    endif
+    if exists( 'g:slimv_keybindings' )
+        call add( info,  printf( 'g:slimv_keybindings   = %d',    g:slimv_keybindings ) )
+    endif
+    if exists( 'g:slimv_menu' )
+        call add( info,  printf( 'g:slimv_menu          = %d',    g:slimv_menu ) )
+    endif
+    if exists( 'g:slimv_ctags' )
+        call add( info,  printf( 'g:slimv_ctags         = %d',    g:slimv_ctags ) )
+    endif
     call SlimvLog( 1, info )
 endfunction
 
@@ -341,6 +372,16 @@ if !exists( 'g:slimv_menu' )
     let g:slimv_menu = 1
 endif
 
+" Build the ctags command capable of generating lisp tags file
+" The command can be run with execute 'silent !' . g:slimv_ctags
+if !exists( 'g:slimv_ctags' )
+    let ctags = split( globpath( '$vim,$vimruntime', 'ctags.exe' ), '\n' )
+    if len( ctags ) > 0
+        " Remove -a option to regenerate every time
+        let g:slimv_ctags = '"' . ctags[0] . '" -a --language-force=lisp *.lisp *.clj'
+    endif
+endif
+
 
 " =====================================================================
 "  Template definitions
@@ -382,6 +423,21 @@ endif
 if !exists( 'g:slimv_template_unprofile' )
     "TODO: support different Lisp implementations
     let g:slimv_template_unprofile = '(mon:unmonitor %1)'
+endif
+
+if !exists( 'g:slimv_template_unprofile_all' )
+    "TODO: support different Lisp implementations
+    let g:slimv_template_unprofile_all = '(mon:unmonitor)'
+endif
+
+if !exists( 'g:slimv_template_profile_report' )
+    "TODO: support different Lisp implementations
+    let g:slimv_template_profile_report = '(mon:report-monitoring)'
+endif
+
+if !exists( 'g:slimv_template_profile_reset' )
+    "TODO: support different Lisp implementations
+    let g:slimv_template_profile_reset = '(mon:reset-all-monitoring)'
 endif
 
 if !exists( 'g:slimv_template_disassemble' )
@@ -968,7 +1024,6 @@ endfunction
 " %1 string is substituted with par1
 function! SlimvEvalForm1( template, par1 )
     let p1 = escape( a:par1, '&' )
-    "let p1 = escape( p1, '\\' )
     let temp1 = substitute( a:template, '%1', p1, 'g' )
     let lines = [temp1]
     call SlimvEval( lines )
@@ -980,8 +1035,6 @@ endfunction
 function! SlimvEvalForm2( template, par1, par2 )
     let p1 = escape( a:par1, '&' )
     let p2 = escape( a:par2, '&' )
-    "let p1 = escape( p1, '\\' )
-    "let p2 = escape( p2, '\\' )
     let temp1 = substitute( a:template, '%1', p1, 'g' )
     let temp2 = substitute( temp1,      '%2', p2, 'g' )
     let lines = [temp2]
@@ -1115,6 +1168,18 @@ function! SlimvInspect()
     endif
 endfunction
 
+" Compile and load profiler
+function! SlimvLoadProfiler()
+    let profiler = split( globpath( &runtimepath, 'plugin/**/metering.lisp'), '\n' )
+    if len( profiler ) > 0
+        let filename = profiler[0]
+        let filename = substitute( filename, '\\', '/', 'g' )
+        call SlimvEvalForm2( g:slimv_template_compile_file, filename, 'T' )
+    else
+        let dummy = input( "metering.lisp is not found in the Vim plugin directory. Press ENTER to continue." )
+    endif
+endfunction
+
 " Switch profiling on for the selected function
 function! SlimvProfile()
     call SlimvSelectSymbol()
@@ -1125,12 +1190,27 @@ function! SlimvProfile()
 endfunction
 
 " Switch profiling off for the selected function
-function! SlimvUnProfile()
+function! SlimvUnprofile()
     call SlimvSelectSymbol()
     let s = input( 'Unprofile: ', SlimvGetSelection() )
     if s != ''
         call SlimvEvalForm1( g:slimv_template_unprofile, s )
     endif
+endfunction
+
+" Switch profiling completely off
+function! SlimvUnprofileAll()
+    call SlimvEvalForm( g:slimv_template_unprofile_all )
+endfunction
+
+" Report profiling results
+function! SlimvProfileReport()
+    call SlimvEvalForm( g:slimv_template_profile_report )
+endfunction
+
+" Reset profiling counters
+function! SlimvProfileReset()
+    call SlimvEvalForm( g:slimv_template_profile_reset )
 endfunction
 
 " ---------------------------------------------------------------------
@@ -1145,14 +1225,14 @@ endfunction
 " Compile and load whole file
 function! SlimvCompileLoadFile()
     let filename = fnamemodify( bufname(''), ':p' )
-    let filename = escape( filename, '\\' )
+    let filename = substitute( filename, '\\', '/', 'g' )
     call SlimvEvalForm2( g:slimv_template_compile_file, filename, 'T' )
 endfunction
 
 " Compile whole file
 function! SlimvCompileFile()
     let filename = fnamemodify( bufname(''), ':p' )
-    let filename = escape( filename, '\\' )
+    let filename = substitute( filename, '\\', '/', 'g' )
     call SlimvEvalForm2( g:slimv_template_compile_file, filename, 'NIL' )
 endfunction
 
@@ -1163,18 +1243,27 @@ function! SlimvCompileRegion() range
     call SlimvEvalForm1( g:slimv_template_compile_string, region )
 endfunction
 
+" ---------------------------------------------------------------------
+
 " Describe the selected symbol
 function! SlimvDescribeSymbol()
     call SlimvSelectSymbol()
     call SlimvEvalForm1( g:slimv_template_describe, SlimvGetSelection() )
 endfunction
 
-" ---------------------------------------------------------------------
-
 " Apropos of the selected symbol
 function! SlimvApropos()
     call SlimvSelectSymbol()
     call SlimvEvalForm1( g:slimv_template_apropos, SlimvGetSelection() )
+endfunction
+
+" Generate tags file using ctags
+function! SlimvGenerateTags()
+    if exists( 'g:slimv_ctags' ) && g:slimv_ctags != ''
+        execute 'silent !' . g:slimv_ctags
+    else
+        let dummy = input( "Copy ctags to the Vim path or define g:slimv_ctags. Press ENTER to continue." )
+    endif
 endfunction
 
 " =====================================================================
@@ -1208,11 +1297,16 @@ if g:slimv_keybindings == 1
     noremap <Leader>F  :<C-U>call SlimvCompileFile()<CR>
     noremap <Leader>R  :call SlimvCompileRegion()<CR>
 
+    noremap <Leader>O  :call SlimvLoadProfiler()<CR>
     noremap <Leader>p  :call SlimvProfile()<CR>
     noremap <Leader>P  :call SlimvUnprofile()<CR>
+    noremap <Leader>U  :call SlimvUnprofileAll()<CR>
+    noremap <Leader>o  :call SlimvProfileReport()<CR>
+    noremap <Leader>x  :call SlimvProfileReset()<CR>
 
     noremap <Leader>s  :call SlimvDescribeSymbol()<CR>
     noremap <Leader>a  :call SlimvApropos()<CR>
+    noremap <Leader>]  :call SlimvGenerateTags()<CR>
 
     noremap <Leader>S  :call SlimvConnectServer()<CR>
     noremap <Leader>z  :call SlimvRefresh()<CR>
@@ -1245,12 +1339,17 @@ elseif g:slimv_keybindings == 2
     noremap <Leader>cr  :call SlimvCompileRegion()<CR>
 
     " Profile commands
+    noremap <Leader>pl  :call SlimvLoadProfiler()<CR>
     noremap <Leader>pp  :call SlimvProfile()<CR>
     noremap <Leader>pu  :call SlimvUnprofile()<CR>
+    noremap <Leader>pa  :call SlimvUnprofileAll()<CR>
+    noremap <Leader>pr  :call SlimvProfileReport()<CR>
+    noremap <Leader>px  :call SlimvProfileReset()<CR>
 
     " Documentation commands
     noremap <Leader>ds  :call SlimvDescribeSymbol()<CR>
     noremap <Leader>da  :call SlimvApropos()<CR>
+    noremap <Leader>dt  :call SlimvGenerateTags()<CR>
 
     " REPL commands
     noremap <Leader>rc  :call SlimvConnectServer()<CR>
@@ -1293,11 +1392,16 @@ if g:slimv_menu == 1
     menu &Slimv.&Compilation.Compile-&File             :<C-U>call SlimvCompileFile()<CR>
     menu &Slimv.&Compilation.Compile-&Region           :call SlimvCompileRegion()<CR>
 
+    menu &Slimv.&Profiling.&Load-Profiler              :call SlimvLoadProfiler()<CR>
     menu &Slimv.&Profiling.&Profile\.\.\.              :call SlimvProfile()<CR>
     menu &Slimv.&Profiling.&Unprofile\.\.\.            :call SlimvUnprofile()<CR>
+    menu &Slimv.&Profiling.Unprofile-&All              :call SlimvUnprofileAll()<CR>
+    menu &Slimv.&Profiling.Profile-Rep&ort             :call SlimvProfileReport()<CR>
+    menu &Slimv.&Profiling.Profile-&Reset              :call SlimvProfileReset()<CR>
 
     menu &Slimv.&Documentation.Describe-&Symbol        :call SlimvDescribeSymbol()<CR>
     menu &Slimv.&Documentation.&Apropos                :call SlimvApropos()<CR>
+    menu &Slimv.&Documentation.Generate-&Tags          :call SlimvGenerateTags()<CR>
 
     menu &Slimv.&REPL.&Connect-Server                  :call SlimvConnectServer()<CR>
     menu &Slimv.&REPL.&Refresh                         :call SlimvRefresh()<CR>
