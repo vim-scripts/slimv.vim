@@ -1,7 +1,7 @@
-*slimv.txt*                    Slimv                 Last Change: 22 Mar 2009
+*slimv.txt*                    Slimv                 Last Change: 25 Mar 2009
 
 Slimv                                                                  *slimv*
-                               Version 0.4.0
+                               Version 0.4.1
 
 The Superior Lisp Interaction Mode for Vim.
 This plugin is aimed to help Lisp development by interfacing between Vim and
@@ -98,6 +98,8 @@ Below that list follows the detailed explanation on each option.
 |g:slimv_filetype|           Filetype for Slimv. Not necessarily the same as
                              the Vim filetype. Defaults to 'lisp'.
 
+|g:slimv_impl|               The Lisp implementation. Defaults to 'clisp'.
+
 |g:slimv_keybindings|        Predefined Slimv keybindings. Possible values:
                              1 = set #1, 2 = set #2, other = no keybindings
 
@@ -163,6 +165,13 @@ Possible values are: 'lisp' or 'clojure'.
 When 'clojure' is used, |g:slimv_lisp| also needs to be defined to the command
 that starts the Clojure REPL.
 See |g:slimv-clojure| for details.
+
+                                                                 *g:slimv_impl*
+This is the Lisp implementation used. Slimv tries to autodetect it at script
+startup. If the autodetection fails, set this to the actual Lisp
+implementation.
+Example:
+    let g:slimv_impl = 'sbcl'
 
                                                                  *g:slimv_port*
 The default port used by Slimv is 5151. If this port is used by another
@@ -359,6 +368,11 @@ Lisp form built when issuing the 'Unprofile All' command.
 Example:
     let g:slimv_template_unprofile_all = "(mon:unmonitor)"
 
+                                               *g:slimv_template_show_profiled*
+Lisp form built when issuing the 'Show Profiled' command.
+Example:
+    let g:slimv_template_show_profiled = "(pprint mon:*monitored-functions*)"
+
                                               *g:slimv_template_profile_report*
 Lisp form built when issuing the 'Profile Report' command.
 Example:
@@ -440,6 +454,7 @@ built in keybinding set (|g:slimv_keybindings|=2) for Slimv are the following:
     ,p      ,pp      Profile
     ,P      ,pu      Unprofile
     ,U      ,pa      Unprofile All
+    ,?      ,ps      Show Profiled
     ,o      ,pr      Profile Report
     ,x      ,px      Profile Reset
 
@@ -450,8 +465,16 @@ built in keybinding set (|g:slimv_keybindings|=2) for Slimv are the following:
 
     REPL commands:
     ,S      ,rc      Connect to Server
+    ,.      ,rs      Send Input
+    ,/      ,ro      Close and Send Input
+    ,<      ,rp      Previous Input
+    ,>      ,rn      Next Input
     ,z      ,rr      Refresh REPL Buffer
-    ,Z      ,rn      Refresh REPL Now
+    ,Z      ,rw      Refresh REPL Now
+
+
+The above mappings are defined for normal mode.
+Also see *slimv-repl* for additional keybindings valid only in the REPL buffer.
 
 
 ===============================================================================
@@ -512,6 +535,9 @@ Insert Mode:
     <CR>           Sends the command typed in the last line to the Lisp REPL
                    for evaluation.
 
+    <C-CR>         Adds missing closing parens at the end of the command,
+                   then sends the command to the Lisp REPL for evaluation.
+
     <BS>           In the last line it deletes characters to the left only
                    until the end of the Lisp prompt reached.
 
@@ -566,22 +592,28 @@ which can be set up this way:
 ===============================================================================
 PROFILING                                                     *slimv-profiling*
 
-Slimv is capable of utilizing the same monitoring/profiling package that is
-used by SLIME, at least for CLISP and maybe for some other Common Lisp
-implementations. Fortunately metering.lisp is in public domain, so its current
-version (at the time of writing this document) is included in Slimv.
+Slimv is capable pf utilizing SBCL's built-in profiler, and also the same
+monitoring/profiling package (metering.lisp) that is used by SLIME, at least
+for CLISP and maybe for some other Common Lisp implementations.
+Fortunately SLIME's metering.lisp is in public domain, so its current version
+(at the time of writing this document) is included in Slimv.
 The most recent version can be extracted from the main directory of SLIME.
 SLIME can be downloaded from http://common-lisp.net/project/slime/
 
-In order to use the profiler first it must be compiled and loaded into a
-running REPL. Perform this with the 'Load-Profiler' command. If the compilation
-was successful then Slimv is ready to profile.
-Use the 'Profile' command to select functions for profiling,
+SBCL's profiler is ready to use by just starting the Lisp REPL.
+In order to use SLIME's profiler with CLISP it first must be compiled and
+loaded into a running REPL. Perform this with the 'Load-Profiler' command.
+If the compilation was successful then Slimv is ready to profile.
+
+Use the 'Profile' command to select functions for profiling, 'Unprofile' to
+deselect specific functions or 'Unprofile All' to deselect all functions.
+Obtain a list of profiled functions with 'Show Profiled'.
 use 'Profile-Report' to display profiling results.
 Reset profiling counters with 'Profile-Reset'.
 
-When the REPL is restarted, the profiler needs to be reloaded:
-select the 'Load-Profiler' command again (this re-compiles metering.lisp).
+When the REPL is restarted, the profiler needs to be reloaded (only in case
+of CLISP): select the 'Load-Profiler' command again (this re-compiles
+metering.lisp).
 
 It is possible to override the default profile commands via the following
 templates (see |slimv_templates|):
@@ -589,6 +621,7 @@ templates (see |slimv_templates|):
     |g:slimv_template_profile|
     |g:slimv_template_unprofile|
     |g:slimv_template_unprofile_all|
+    |g:slimv_template_show_profiled|
     |g:slimv_template_profile_report|
     |g:slimv_template_profile_reset|
 
@@ -620,11 +653,14 @@ There are some built-in Vim reindentation commands that may come very handy
 when editing Lisp files. One can define a custom key mapping for any of them,
 such mappings are not defined by Slimv.
 
+    :set autoindent         Copy indent from current line when starting
+                            a new line.
+
     =                       Reindent selection, after a text has been selected.
 
     ==                      Reindent current line.
 
-    [(v%=                   Select current form and reindent it.
+    vab=   or    [(v%=      Select current form and reindent it.
 
     99[(v%=                 Select top level form and reindent it.
 
@@ -647,9 +683,12 @@ topic for a Lisp programmer.
     :source $VIMRUNTIME/macros/matchit.vim
                             Adds extended matching with "%" to Vim.
 
-    [(v                     Select current form.
+    vab    or    [(v%       Select current form.
+    vib                     Select current form without enclosing parens.
+    yab                     Yank current form.
+    dab                     Delete current form.
 
-    99[(v                   Select top level form.
+    99[(v%                  Select top level form.
 
     g:lisp_rainbow          Colorize differing levels of parenthesization with
                             different highlighting. Currently works only for
@@ -665,7 +704,7 @@ topic for a Lisp programmer.
                             starting with the same letters as typed in up or
                             down direction.
 
-    set complete            The |'complete'| option controls how keyword
+    :set complete           The |'complete'| option controls how keyword
                             completion works.
 
 
@@ -762,6 +801,11 @@ FAQ                                                                 *slimv-faq*
 ===============================================================================
 CHANGE LOG                                                    *slimv-changelog*
 
+0.4.1  - Added profiler support for SBCL.
+       - Added commands/menu items: Profiling: Show Profiled,
+         REPL: Send Input, Close and Send Input, Previous Input, Next Input
+       - Display Slimv error messages with ErrorMsg highlight.
+
 0.4.0  - Added SLIME's profiling tool with support from Slimv.
        - Added command to generate tags file.
        - Fixed evaluation problems of large buffers on some systems.
@@ -851,8 +895,9 @@ Author: Tamas Kovacs <kovisoft at gmail dot com>
 
 Credit must go out to Bram Moolenaar and all the Vim developers for making
 the world's (one of the) best editor.
-Also special thanks to Eric Marsden and all the Emacs/SLIME developers for
-making SLIME.
+Thanks to Eric Marsden and all the Emacs/SLIME developers for making SLIME.
+Also special thanks to Mark Kantrowitz, Chris McConnell, Skef Wholey and
+Rob MacLachlan for making the Metering System.
 Last but not least many thanks to my wife Andrea (for the Italians out there:
 hey, this is a female name in Hungary :) for her support and patience.
 
