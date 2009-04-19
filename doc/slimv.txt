@@ -1,7 +1,7 @@
-*slimv.txt*                    Slimv                 Last Change: 25 Mar 2009
+*slimv.txt*                    Slimv                 Last Change: 16 Apr 2009
 
 Slimv                                                                  *slimv*
-                               Version 0.4.1
+                               Version 0.5.0
 
 The Superior Lisp Interaction Mode for Vim.
 This plugin is aimed to help Lisp development by interfacing between Vim and
@@ -31,7 +31,8 @@ INSTALLATION                                               *slimv-installation*
 Prerequisites:
 
   Required components:
-  - Lisp (any Common Lisp implementation should be OK) or Clojure installed.
+  - Lisp (any console Common Lisp implementation should be OK) or
+    Clojure installed.
   - Python 2.4 or later installed.
 
   Optional components:
@@ -44,8 +45,23 @@ To install the script:
   - Download the slimv.zip.
   - Extract the zip archive into your vimfiles or runtime directory.
     See Vim help file |usr_05.txt| for details on adding a plugin.
-    The archive contains plugin/slimv.vim, plugin/slimv.py,
-    plugin/metering.lisp and doc/slimv.txt.
+    The archive contains the following files:
+
+       doc/slimv.txt
+       ftdetect/clojure.vim
+       ftplugin/metering.lisp
+       ftplugin/slimv.py
+       ftplugin/slimv.vim
+       ftplugin/slimv-clhs.vim
+       ftplugin/slimv-cljapi.vim
+       ftplugin/slimv-javadoc.vim
+       ftplugin/clojure/slimv-clojure.vim
+       ftplugin/lisp/slimv-lisp.vim
+       indent/clojure/slimv-indent-clojure.vim
+       syntax/clojure/slimv-syntax-clojure.vim
+
+    You might already have an ftdetect/clojure.vim file if you already use
+    another Clojure filetype plugin. In this case just keep the original file.
   - Start Vim or goto an existing instance of Vim.
   - Execute the following command:
 >
@@ -59,6 +75,11 @@ To install the script:
 
 Upgrade from previous script versions:
 
+0.1   - 0.4.x    The project went through a major reorganization, so users
+                 who already installed previous versions of the plugin should
+                 first delete the old files. These are: plugin/slimv.vim,
+                 plugin/slimv.py, plugin/metering.lisp and doc/slimv.txt
+                 in the vimfiles directory.
 0.1   - 0.2.x    Users having a custom |g:slimv_repl_file| setting should
                  consider attaching the .lisp or .clj extension to the name
                  of the REPL buffer, in order to have syntax highlighting
@@ -68,9 +89,25 @@ Upgrade from previous script versions:
 Uninstallation:
 
   - Exit all Vim instances and exit from the REPL server terminal window.
-  - Delete plugin/slimv.vim, plugin/slimv.py, plugin/metering.lisp and
-    doc/slimv.txt from the vimfiles directory, where these files were copied
-    during installation.
+  - Delete the files that were copied to the vimfiles directory during
+    installation:
+
+       doc/slimv.txt
+       ftdetect/clojure.vim
+       ftplugin/metering.*
+       ftplugin/slimv.py
+       ftplugin/slimv.vim
+       ftplugin/slimv-clhs.vim
+       ftplugin/slimv-cljapi.vim
+       ftplugin/slimv-javadoc.vim
+       ftplugin/clojure/slimv-clojure.vim
+       ftplugin/lisp/slimv-lisp.vim
+       indent/clojure/slimv-indent-clojure.vim
+       syntax/clojure/slimv-syntax-clojure.vim
+
+    (Special note on metering.lisp: if the profiler was compiled, then the
+    compiled files should be deleted as well, hence the metering.* above.)
+
 
 ===============================================================================
 CUSTOMIZATION                                             *slimv-customization*
@@ -85,6 +122,21 @@ CUSTOMIZATION                                             *slimv-customization*
 The list below contains an alphabetical collection of Slimv options.
 Below that list follows the detailed explanation on each option.
 
+|g:slimv_clhs_root|          Base URL for the Common Lisp Hyperspec.
+
+|g:slimv_clhs_user_db|       User defined extension for Slimv's built-in
+                             Common Lisp Hyperspec symbol database.
+
+|g:slimv_clhs_user_root|     Base URL for the user defined CLHS extension.
+
+|g:slimv_cljapi_root|        Base URL for the Clojure API.
+
+|g:slimv_cljapi_user_db|     User defined extension for Slimv's built-in
+                             Clojure API symbol database.
+
+|g:slimv_cljapi_user_root|   Base URL for the user defined Clojure API
+                             extension.
+
 |g:slimv_client|             The whole OS command to start the Slimv client.
                              Used for advanced customization, like changing
                              the terminal emulator to use for the Lisp REPL.
@@ -95,10 +147,9 @@ Below that list follows the detailed explanation on each option.
 
 |g:slimv_debug_client|       Display the command to start client.
 
-|g:slimv_filetype|           Filetype for Slimv. Not necessarily the same as
-                             the Vim filetype. Defaults to 'lisp'.
-
 |g:slimv_impl|               The Lisp implementation. Defaults to 'clisp'.
+
+|g:slimv_javadoc_root|       Base URL for the JavaDoc.
 
 |g:slimv_keybindings|        Predefined Slimv keybindings. Possible values:
                              1 = set #1, 2 = set #2, other = no keybindings
@@ -154,17 +205,6 @@ Example:
 This is the installation path of the Lisp interpreter.
 Example:
     let g:slimv_lisp = 'C:/MyLispDir/mylisp.exe'
-
-                                                             *g:slimv_filetype*
-Defines the filetype for Slimv. This is not necessarily the same as the Vim
-filetype. It is possible that one is using the 'lisp' Vim filetype with Clojure
-or Scheme files for syntax and indenting, but in Slimv the Lisp dialect should
-be explicitly set to the language used.
-Slimv tries to autodetect this value from the Vim filetype and |g:slimv_lisp|.
-Possible values are: 'lisp' or 'clojure'.
-When 'clojure' is used, |g:slimv_lisp| also needs to be defined to the command
-that starts the Clojure REPL.
-See |g:slimv-clojure| for details.
 
                                                                  *g:slimv_impl*
 This is the Lisp implementation used. Slimv tries to autodetect it at script
@@ -317,6 +357,39 @@ While waiting, the output is displayed continuously. During that time the
 regular Vim commands are not available. For the posssible commands see
 |slimv-repl|.
 
+                                                            *g:slimv_clhs_root*
+                                                          *g:slimv_cljapi_root*
+                                                         *g:slimv_javadoc_root*
+Base URL for the Common Lisp Hyperspec, Clojure API, and JavaDoc.
+If the Hyperspec/API is downloaded to the hard disk, then set these variables
+to the base path of the local copy, something like
+"file:/usr/local/doc/HyperSpec/".
+It is possible to extend the Hyperspec symbol database with user defined
+symbols, see |g:slimv_clhs_user_db| and |g:slimv_cljapi_user_db|.
+
+                                                         *g:slimv_clhs_user_db*
+                                                       *g:slimv_cljapi_user_db*
+                                                       *g:slimv_clhs_user_root*
+                                                     *g:slimv_cljapi_user_root*
+If you want to extend Slimv's built-in Hyperspec/API symbol database, define
+the list of additional symbols in these variables. The format of this list is
+the following: [["symbol1", "url1"], ["symbol2", "url2"], ...].
+If the URL contains a ":" character then it is considered to be a fully
+qualified URL, otherwise it is a relative address to the Hyperspec root
+defined in |g:slimv_clhs_root| or |g:slimv_cljapi_root|.
+It is also possible to define a separate base URL for the user extensions via
+|g:slimv_clhs_user_root| or |g:slimv_cljapi_user_root|.
+
+Example:
+    let g:slimv_clhs_user_root = "http://myhyperspec.com/"
+    let g:slimv_clhs_user_db = [
+        \["my-cool-function", "mycoolfunc.htm"],
+        \["my-super-function", "mysuperfunc.htm"],
+        \["my-awesome-function", "myawesomefunc.htm"]] 
+
+Remember to insert a backslash at the beginning of each additional line of a
+multi-line Vim command.
+
 
 -------------------------------------------------------------------------------
                                                               *slimv_templates*
@@ -461,10 +534,13 @@ built in keybinding set (|g:slimv_keybindings|=2) for Slimv are the following:
     Documentation commands:
     ,s      ,ds      Describe Symbol
     ,a      ,da      Apropos
+    ,h      ,dh      Hyperspec
     ,]      ,dt      Generate Tags
 
-    REPL commands:
-    ,S      ,rc      Connect to Server
+    Repl commands:
+    ,c      ,rc      Connect to Server
+
+    REPL menu commands (separate menu, valid only for the REPL buffer):
     ,.      ,rs      Send Input
     ,/      ,ro      Close and Send Input
     ,<      ,rp      Previous Input
@@ -473,7 +549,6 @@ built in keybinding set (|g:slimv_keybindings|=2) for Slimv are the following:
     ,Z      ,rw      Refresh REPL Now
 
 
-The above mappings are defined for normal mode.
 Also see *slimv-repl* for additional keybindings valid only in the REPL buffer.
 
 
@@ -563,7 +638,11 @@ While waiting for REPL output:
 ===============================================================================
 CLOJURE SUPPORT                                                 *slimv-clojure*
 
-A basic Clojure support has been introduced in the latest Slimv version.
+Vim has a built-in support for Lisp, however it has no Clojure support by
+default. As Clojure is a Lisp dialect, Slimv simply reuses Vim's Lisp syntax
+and indent plugins for Clojure. It this does not suit your needs, then it is
+possible to download and install a separate Clojure plugin parallel to Slimv.
+
 In order to launch the Clojure REPL the variable |g:slimv_lisp| must be
 properly set up.
 The simplest definition is something like this, which assumes that the
@@ -577,16 +656,6 @@ Here follows an example, which starts c:\Clojure\clojure.jar on Windows.
 Remember to escape the backslashes:
 
   let g:slimv_lisp = '"java -cp c:\\Clojure\\clojure.jar clojure.lang.Repl"'
-
-If Slimv finds the string 'clojure' in |g:slimv_lisp|, then |g:slimv_filetype|
-is automatically set to 'clojure'. If it fails to do so, you need to set
-|g:slimv_filetype| explicitly.
-
-I strongly recommend to download and install Vim plugin(s) specifically made
-for Clojure. Another option is to use the 'lisp' filetype for 'Clojure' files,
-which can be set up this way:
-
-  au BufNewFile,BufRead *.clj setf lisp
 
 
 ===============================================================================
@@ -749,7 +818,8 @@ FAQ                                                                 *slimv-faq*
 
 - Q: How does Slimv work?
 - A: Slimv consists of three parts: Vim plugin, client and server.
-     The Slimv server is a swank server that embeds a Lisp REPL.
+     The Slimv server is a swank server that embeds a console Lisp REPL
+     via pipes, catching all REPL input/output.
      The Slimv client interfaces with the server and is responsible
      for sending Lisp commands to the Lisp REPL.
      The Vim plugin is translating editor commands to Lisp commands to be
@@ -800,6 +870,12 @@ FAQ                                                                 *slimv-faq*
 
 ===============================================================================
 CHANGE LOG                                                    *slimv-changelog*
+
+0.5.0  - Major project reorganization:
+         Slimv is now a Lisp and Clojure filetype plugin.
+       - Added Common Lisp Hyperspec, Clojure API, and JavaDoc lookup.
+       - Separate menu for REPL buffer, menu items work in every Vim mode.
+       - Fixed mark 's usage bug - thanks to Lorenzo Campedelli.
 
 0.4.1  - Added profiler support for SBCL.
        - Added commands/menu items: Profiling: Show Profiled,
@@ -852,15 +928,16 @@ CHANGE LOG                                                    *slimv-changelog*
 ===============================================================================
 ISSUES, LIMITATIONS, KNOWN BUGS                                  *slimv-issues*
 
-- Needs Vim version 7.0 or above, because of the intensive use of lists.
-- Vim register 's' is used for all form selections, so its original content is
+- Works only with the console Lisp and Python versions, does not work with the
+  GUI Lisp versions or with a Python IDE (like IDLE).
+- Does not work from within Cygwin.
+- Vim register "s is used for all form selections, so its original content is
   destroyed.
-- Vim mark 's' is used to mark the end of the REPL buffer, i.e. the beginning
+- Vim mark 's is used to mark the end of the REPL buffer, i.e. the beginning
   of the "command line".
 - Limited profiling support: does not work for all Lisp implementations.
+- Needs Vim version 7.0 or above, because of the intensive use of lists.
 - Needs Python 2.4 or higher (uses the subprocess module)
-- Works only via the Python interpreter, does not work using a Python IDE
-  (like IDLE).
 - Sometimes a Python exception happens after a CTRL-C inside the REPL buffer
   followed by an EOF (CTRL-Z or CTRL-D) in the external REPL window.
 - REPL buffer refresh on Vim focus gain works only in gvim, not in console vim.
@@ -869,12 +946,19 @@ ISSUES, LIMITATIONS, KNOWN BUGS                                  *slimv-issues*
   It does not work in Clojure.
 - There are some functions that are not compatible or simply not working for
   Clojure.
+- It is not possible to run separate Lisp and Clojure REPL in the same
+  Slimv session. Also some other features cannot switch language in the same
+  session, e.g. profiling.
 
 
 ===============================================================================
 TODO                                                               *slimv-todo*
 
-- Make the script a lisp+clojure filetype plugin.
+- Add JavaDoc to Clojure Hyperspec lookup.
+- Autocomplete symbols based on the Hyperspec database.
+- Add Compile System.
+- Add Cross Reference functions.
+- Add Debugger.
 - Start client and server separately having two simpler commands for client
   and server startup, instead of the existing g:slimv_client solution.
 - Implement an own main loop in Vim for the REPL buffer, poll REPL output
@@ -884,9 +968,6 @@ TODO                                                               *slimv-todo*
 - Or put the (Python) client part back into the .vim script, rewrite only the
   server part in Lisp.
 - Handle specific REPL output in Vim (like compilation notes).
-- Add Compile System.
-- Add Cross Reference functions.
-- Extend profile support.
 
 ===============================================================================
 CREDITS                                                         *slimv-credits*
@@ -896,8 +977,11 @@ Author: Tamas Kovacs <kovisoft at gmail dot com>
 Credit must go out to Bram Moolenaar and all the Vim developers for making
 the world's (one of the) best editor.
 Thanks to Eric Marsden and all the Emacs/SLIME developers for making SLIME.
-Also special thanks to Mark Kantrowitz, Chris McConnell, Skef Wholey and
-Rob MacLachlan for making the Metering System.
+Special thanks to Mark Kantrowitz, Chris McConnell, Skef Wholey and
+Rob MacLachlan for creating the Metering System.
+Also special thanks to Erik Naggum, Yuji Minejima and others for making the
+Common Lisp Hyperspec lookup packages for SLIME.
+Thanks to the Vim community for testing and commenting the script.
 Last but not least many thanks to my wife Andrea (for the Italians out there:
 hey, this is a female name in Hungary :) for her support and patience.
 
