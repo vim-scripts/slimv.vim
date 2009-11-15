@@ -1,7 +1,7 @@
-*slimv.txt*                    Slimv                 Last Change: 04 Jun 2009
+*slimv.txt*                    Slimv                 Last Change: 15 Nov 2009
 
 Slimv                                                                  *slimv*
-                               Version 0.5.3
+                               Version 0.5.4
 
 The Superior Lisp Interaction Mode for Vim.
 This plugin is aimed to help Lisp development by interfacing between Vim and
@@ -58,7 +58,7 @@ To install the script:
        ftplugin/slimv-javadoc.vim
        ftplugin/clojure/slimv-clojure.vim
        ftplugin/lisp/slimv-lisp.vim
-       indent/clojure/slimv-indent-clojure.vim
+       indent/clojure.vim
        syntax/clojure/slimv-syntax-clojure.vim
 
     You might already have an ftdetect/clojure.vim file if you already use
@@ -114,7 +114,7 @@ Uninstallation:
        ftplugin/slimv-javadoc.vim
        ftplugin/clojure/slimv-clojure.vim
        ftplugin/lisp/slimv-lisp.vim
-       indent/clojure/slimv-indent-clojure.vim
+       indent/clojure.vim
        syntax/clojure/slimv-syntax-clojure.vim
 
     (Special note on metering.lisp: if the profiler was compiled, then the
@@ -674,12 +674,13 @@ directory for clojure.jar is in the PATH. Please note that the whole expression
 needs to be enclosed in double quotes, as it will be passed to the server in
 one single command line argument:
 
-  let g:slimv_lisp = '"java -cp clojure.jar clojure.lang.Repl"'
+  let g:slimv_lisp = '"java -cp clojure.jar;clojure-contrib.jar clojure.main"'
 
 Here follows an example, which starts c:\Clojure\clojure.jar on Windows.
 Remember to escape the backslashes:
 
-  let g:slimv_lisp = '"java -cp c:\\Clojure\\clojure.jar clojure.lang.Repl"'
+  let g:slimv_lisp =
+  \ '"java -cp c:\\Clojure\\clojure.jar;c:\\Clojure\\clojure-contrib.jar clojure.lang.Repl"'
 
 
 ===============================================================================
@@ -930,6 +931,13 @@ FAQ                                                                 *slimv-faq*
 
 ===============================================================================
 CHANGE LOG                                                    *slimv-changelog*
+
+0.5.4  - Added autodetection for clojure-contrib.jar.
+       - Added autodetection for Clozure CL.
+       - Applied lisp_rainbow to Clojure's [].
+       - Renamed Clojure indent plugin to clojure.vim
+         so that Vim finds and loads it.
+       - Switched on lisp mode explicitly for Clojure filetype.
 
 0.5.3  - Added Interrupt-Lisp-Process command.
        - Added mapping for the REPL menu.
