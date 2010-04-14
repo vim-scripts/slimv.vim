@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.5.6
-" Last Change:  08 Feb 2010
+" Version:      0.6.0
+" Last Change:  19 Mar 2010
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -202,6 +202,9 @@ function! SlimvLogGlobals()
     if exists( 'g:slimv_repl_wait' )
         call add( info,  printf( 'g:slimv_repl_wait     = %d',    g:slimv_repl_wait ) )
     endif
+    if exists( 'g:slimv_repl_wrap' )
+        call add( info,  printf( 'g:slimv_repl_wrap     = %d',    g:slimv_repl_wrap ) )
+    endif
     if exists( 'g:slimv_keybindings' )
         call add( info,  printf( 'g:slimv_keybindings   = %d',    g:slimv_keybindings ) )
     endif
@@ -210,6 +213,12 @@ function! SlimvLogGlobals()
     endif
     if exists( 'g:slimv_ctags' )
         call add( info,  printf( 'g:slimv_ctags         = %d',    g:slimv_ctags ) )
+    endif
+    if exists( 'g:paredit_mode' )
+        call add( info,  printf( 'g:paredit_mode        = %d',    g:paredit_mode ) )
+    endif
+    if exists( 'g:paredit_matchlines' )
+        call add( info,  printf( 'g:paredit_matchlines  = %d',    g:paredit_matchlines ) )
     endif
 
     call SlimvLog( 1, info )
@@ -298,6 +307,11 @@ endif
 " How many seconds to wait for the REPL output to finish?
 if !exists( 'g:slimv_repl_wait' )
     let g:slimv_repl_wait = 10
+endif
+
+" Wrap long lines in REPL buffer
+if !exists( 'g:slimv_repl_wrap' )
+    let g:slimv_repl_wrap = 1
 endif
 
 " Build client command (if not given in vimrc)
@@ -505,7 +519,7 @@ function! SlimvEndOfReplBuffer( markit, insert )
         " User does not want to display REPL in Vim
         return
     endif
-    normal G$
+    normal! G$
     if a:markit
         " Remember the end of the buffer: user may enter commands here
         " Also remember the prompt, because the user may overwrite it
@@ -594,7 +608,7 @@ function! SlimvRefreshReplBuffer()
         " For this we need to set the virtualedit=all option temporarily
         echon '-- INSERT --'
         set ve=all
-        normal l
+        normal! l
     else
         " Inform user that we are in running mode (waiting for REPL output)
         echon '-- RUNNING --'
@@ -626,7 +640,7 @@ function! SlimvRefreshReplBuffer()
                 if s:insertmode
                     " We are in insert mode, let's fake a movement to the right
                     " in order to display the cursor at the right place.
-                    normal l
+                    normal! l
                 endif
             endif
             if g:slimv_repl_wait != 0
@@ -724,11 +738,17 @@ function! SlimvOpenReplBuffer()
     endif
 
     " Add keybindings valid only for the REPL buffer
-    inoremap <buffer> <silent> <CR> <End><CR><C-O>:call SlimvSendCommand(1,0)<CR>
-    inoremap <buffer> <silent> <C-CR> <End><CR><C-O>:call SlimvSendCommand(1,1)<CR>
-    inoremap <buffer> <silent> <expr> <BS> SlimvHandleBS()
-    inoremap <buffer> <silent> <Up> <C-O>:call SlimvHandleUp()<CR>
-    inoremap <buffer> <silent> <Down> <C-O>:call SlimvHandleDown()<CR>
+    inoremap <buffer> <silent>        <CR>   <End><CR><C-O>:call SlimvSendCommand(1,0)<CR>
+    inoremap <buffer> <silent>        <C-CR> <End><CR><C-O>:call SlimvSendCommand(1,1)<CR>
+    inoremap <buffer> <silent>        <Up>   <C-O>:call SlimvHandleUp()<CR>
+    inoremap <buffer> <silent>        <Down> <C-O>:call SlimvHandleDown()<CR>
+
+    if exists( 'g:paredit_loaded' )
+        inoremap <buffer> <silent> <expr> <BS>   PareditBackspace(1)
+    else
+        inoremap <buffer> <silent> <expr> <BS>   SlimvHandleBS()
+    endif
+
     if g:slimv_keybindings == 1
         noremap <buffer> <silent> <Leader>.  :call SlimvSendCommand(0,0)<CR>
         noremap <buffer> <silent> <Leader>/  :call SlimvSendCommand(0,1)<CR>
@@ -743,6 +763,20 @@ function! SlimvOpenReplBuffer()
         noremap <buffer> <silent> <Leader>rn  :call SlimvNextCommand()<CR>
         noremap <buffer> <silent> <Leader>rr  :call SlimvRefresh()<CR>
         noremap <buffer> <silent> <Leader>rw  :call SlimvRefreshNow()<CR>
+    endif
+
+    if g:slimv_repl_wrap
+        inoremap <buffer> <silent>        <Home> <C-O>g<Home>
+        inoremap <buffer> <silent>        <End>  <C-O>g<End>
+        noremap  <buffer> <silent>        <Up>   gk
+        noremap  <buffer> <silent>        <Down> gj
+        noremap  <buffer> <silent>        <Home> g<Home>
+        noremap  <buffer> <silent>        <End>  g<End>
+        noremap  <buffer> <silent>        k      gk
+        noremap  <buffer> <silent>        j      gj
+        noremap  <buffer> <silent>        0      g0
+        noremap  <buffer> <silent>        $      g$
+        set wrap
     endif
 
     " Add autocommands specific to the REPL buffer
@@ -761,7 +795,7 @@ endfunction
 " Select symbol under cursor and copy it to register 's'
 function! SlimvSelectSymbol()
     "TODO: can we use expand('<cWORD>') here?
-    normal viw"sy
+    normal! viw"sy
 endfunction
 
 " Select extended symbol under cursor and copy it to register 's'
@@ -772,26 +806,26 @@ function! SlimvSelectSymbolExt()
     else
         let &iskeyword = oldkw . ',~,#,&,|,{,},[,]'
     endif
-    normal viw"sy
+    normal! viw"sy
     let &iskeyword = oldkw
 endfunction
 
 " Select bottom level form the cursor is inside and copy it to register 's'
 function! SlimvSelectForm()
-    normal va(o
+    normal! va(o
     " Handle '() or #'() etc. type special syntax forms
     " TODO: what to do with ` operator?
     let c = col( '.' ) - 2
     while c > 0 && match( ' \t()', getline( '.' )[c] ) < 0
-        normal h
+        normal! h
         let c = c - 1
     endwhile
-    normal "sy
+    normal! "sy
 endfunction
 
 " Select top level form the cursor is inside and copy it to register 's'
 function! SlimvSelectToplevelForm()
-    normal 99[(
+    normal! 99[(
     call SlimvSelectForm()
 endfunction
 
@@ -991,7 +1025,7 @@ endfunction
 " Close current top level form by adding the missing parens
 function! SlimvCloseForm()
     let l2 = line( '.' )
-    normal 99[(
+    normal! 99[(
     let l1 = line( '.' )
     let form = []
     let l = l1
@@ -1012,7 +1046,7 @@ function! SlimvCloseForm()
         endwhile
         call setline( l2, lastline )
     endif
-    normal %
+    normal! %
 endfunction
 
 " Handle insert mode 'Backspace' keypress in the REPL buffer
@@ -1048,7 +1082,7 @@ function! SlimvHandleUp()
     if line( "." ) >= line( "'s" )
         call s:PreviousCommand()
     else
-        normal k
+        normal! gk
     endif
 endfunction
 
@@ -1057,7 +1091,7 @@ function! SlimvHandleDown()
     if line( "." ) >= line( "'s" )
         call s:NextCommand()
     else
-        normal j
+        normal! gj
     endif
 endfunction
 
@@ -1223,7 +1257,7 @@ endfunction
 
 " General part of the various macroexpand functions
 function! SlimvMacroexpandGeneral( command )
-    normal 99[(
+    normal! 99[(
     let line = getline( "." )
     if match( line, 'defmacro' ) < 0
         " The form does not contain 'defmacro', put it in a macroexpand block
@@ -1233,9 +1267,9 @@ function! SlimvMacroexpandGeneral( command )
         " The form is a 'defmacro', so do a macroexpand from the macro name and parameters
         if SlimvGetFiletype() == 'clojure'
             " Some Vim configs (e.g. matchit.vim) include the trailing ']' after '%' in Visual mode
-            normal vt[%ht]"sy
+            normal! vt[%ht]"sy
         else
-            normal vt(])"sy
+            normal! vt(])"sy
         endif
         let m = SlimvGetSelection() . '))'
         let m = substitute( m, "defmacro\\s*", a:command . " '(", 'g' )
@@ -1576,6 +1610,7 @@ if g:slimv_keybindings == 1
 
     noremap <Leader>)  :<C-U>call SlimvCloseForm()<CR>
     inoremap <C-X>0    <C-O>:call SlimvCloseForm()<CR>
+    noremap <Leader>(  :<C-U>call PareditToggle()<CR>
 
     noremap <Leader>d  :<C-U>call SlimvEvalDefun()<CR>
     noremap <Leader>e  :<C-U>call SlimvEvalLastExp()<CR>
@@ -1618,6 +1653,7 @@ elseif g:slimv_keybindings == 2
     " Edit commands
     noremap <Leader>tc  :<C-U>call SlimvCloseForm()<CR>
     inoremap <C-X>0     <C-O>:call SlimvCloseForm()<CR>
+    noremap <Leader>(t  :<C-U>call PareditToggle()<CR>
 
     " Evaluation commands
     noremap <Leader>ed  :<C-U>call SlimvEvalDefun()<CR>
@@ -1678,6 +1714,7 @@ if g:slimv_menu == 1
 
     amenu &Slimv.Edi&t.Close-&Form                     :<C-U>call SlimvCloseForm()<CR>
     imenu &Slimv.Edi&t.&Complete-Symbol                <C-X><C-O>
+    amenu &Slimv.Edi&t.&Paredit-Toggle                 :<C-U>call PareditToggle()<CR>
 
     amenu &Slimv.&Evaluation.Eval-&Defun               :<C-U>call SlimvEvalDefun()<CR>
     amenu &Slimv.&Evaluation.Eval-Last-&Exp            :<C-U>call SlimvEvalLastExp()<CR>
