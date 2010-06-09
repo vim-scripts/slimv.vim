@@ -4,8 +4,8 @@
 #
 # Client/Server code for Slimv
 # slimv.py:     Client/Server code for slimv.vim plugin
-# Version:      0.5.5
-# Last Change:  08 Jan 2010
+# Version:      0.6.2
+# Last Change:  01 Jun 2010
 # Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 # License:      This file is placed in the public domain.
 #               No warranty, express or implied.
@@ -38,9 +38,12 @@ run_cmd     = ''            # Complex server-run command (if given via command l
 
 newline     = '\n'
 
-# Are we running on Windows (otherwise assume Linux, sorry for other OS-es)
+# Check if we're running Windows or Mac OS X, otherwise assume Linux
 mswindows = (sys.platform == 'win32')
+darwin = (sys.platform == 'darwin')
 
+if not (mswindows or darwin):
+    import pty
 
 def log( s, level ):
     """Print diagnostic messages according to the actual debug level.
@@ -60,7 +63,7 @@ def start_server():
     """
     if run_cmd == '':
         # Complex run command not given, build it from the information available
-        if mswindows:
+        if mswindows or darwin:
             cmd = []
         else:
             cmd = ['xterm', '-T', 'Slimv', '-e']
@@ -73,6 +76,11 @@ def start_server():
     if mswindows:
         CREATE_NEW_CONSOLE = 16
         server = Popen( cmd, creationflags=CREATE_NEW_CONSOLE )
+    elif darwin:
+        from ScriptingBridge import SBApplication
+
+        term = SBApplication.applicationWithBundleIdentifier_("com.apple.Terminal")
+        term.doScript_in_(" ".join(cmd) + " ; exit", 0) 
     else:
         server = Popen( cmd )
 
@@ -315,7 +323,7 @@ class socket_listener( Thread ):
                         # and also write it to the display (display queue buffer)
                         self.buffer.writebegin()
                         self.buffer.write_nolock( received )
-                        self.inp.write( received )
+                        os.write(self.inp.fileno(), received)
                         self.buffer.writeend()
 
             conn.close()
@@ -349,9 +357,13 @@ class output_listener( Thread ):
                             self.buffer.write( c2 )
                     else:
                         self.buffer.write( c )
-                else:
+                elif darwin:
                     c = self.out.read( 1 )
                     self.buffer.write( c )
+                else:
+                    c = self.out.read( 1 )
+                    if ord( c ) != 0x0D:
+                        self.buffer.write( c )
             except:
                 terminate = 1
 
@@ -385,14 +397,24 @@ def server():
     cmd = shlex.split( lisp_exp )
 
     # Start Lisp
-    repl = Popen( cmd, stdin=PIPE, stdout=PIPE, stderr=STDOUT )
+    if mswindows or darwin:
+        repl = Popen( cmd, stdin=PIPE, stdout=PIPE, stderr=STDOUT )
+        repl_stdin = repl.stdin
+        repl_stdout = repl.stdout
+        repl_pid = repl.pid
+    else:
+        repl_pid, repl_fd = pty.fork()
+        if repl_pid == 0:
+            os.execvp( cmd[0], cmd )
+            os._exit(1)
+        repl_stdin = repl_stdout = os.fdopen( repl_fd )
 
     buffer = repl_buffer( sys.stdout )
 
     # Create and start helper threads
-    sl = socket_listener( repl.stdin, buffer, repl.pid )
+    sl = socket_listener( repl_stdin, buffer, repl_pid )
     sl.start()
-    ol = output_listener( repl.stdout, buffer )
+    ol = output_listener( repl_stdout, buffer )
     ol.start()
 
     # Allow Lisp to start, confuse it with some fancy Slimv messages
@@ -407,7 +429,7 @@ def server():
             # Read input from the console and write it
             # to the stdin of REPL
             text = raw_input()
-            repl.stdin.write( text + newline )
+            os.write( repl_stdin.fileno(), text + newline )
             buffer.write( text + newline, True )
         except EOFError:
             # EOF (Ctrl+Z on Windows, Ctrl+D on Linux) pressed?
@@ -431,7 +453,7 @@ def server():
     # Send exit command to child process and
     # wake output listener up at the same time
     try:
-        repl.stdin.close()
+        repl_stdin.close()
     except:
         # We don't care if this above fails, we'll exit anyway
         pass
