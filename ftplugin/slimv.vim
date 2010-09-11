@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.6.2
-" Last Change:  09 Jun 2010
+" Version:      0.6.3
+" Last Change:  20 Aug 2010
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -196,6 +196,9 @@ function! SlimvLogGlobals()
     if exists( 'g:slimv_repl_file' )
         call add( info,  printf( 'g:slimv_repl_file     = %s',    g:slimv_repl_file ) )
     endif
+    if exists( 'g:slimv_repl_return' )
+        call add( info,  printf( 'g:slimv_repl_return   = %d',    g:slimv_repl_return ) )
+    endif
     if exists( 'g:slimv_repl_split' )
         call add( info,  printf( 'g:slimv_repl_split    = %d',    g:slimv_repl_split ) )
     endif
@@ -297,6 +300,11 @@ endif
 " Filename for the REPL buffer file
 if !exists( 'g:slimv_repl_file' )
     let g:slimv_repl_file = b:SlimvREPLFile()
+endif
+
+" Return from the REPL buffer to the calling Vim buffer/window after each evaluation
+if !exists( 'g:slimv_repl_return' )
+    let g:slimv_repl_return = 0
 endif
 
 " Shall we open REPL buffer in split window?
@@ -492,6 +500,9 @@ let s:last_refresh = 0
 " Debug log buffer
 let s:debug_list = []
 
+" Last used editor window number
+let s:last_winnr = -1
+
 
 " =====================================================================
 "  General utility functions
@@ -611,6 +622,8 @@ function! SlimvRefreshReplBuffer()
     let m = '/\%#/'
     let interrupt = 0
     let wait = g:slimv_repl_wait * 10   " number of cycles to wait for refreshing the REPL buffer
+    "TODO: do not stop refreshing while we have output from REPL
+    "i.e. start counting wait time after output is stopped.
     while wait > 0 || g:slimv_repl_wait == 0
         try
             silent! execute 'match SlimvCursor ' . m
@@ -671,6 +684,11 @@ function! SlimvRefreshReplBuffer()
         startinsert!
         let s:insertmode = 0
     endif
+
+    if g:slimv_repl_return && g:slimv_repl_split && s:last_winnr != -1
+        execute "normal! \<C-w>p"
+    endif
+    let s:last_winnr = -1
 endfunction
 
 " Called when entering REPL buffer
@@ -699,6 +717,7 @@ function! SlimvOpenReplBuffer()
     if repl_buf == -1
         " Create a new REPL buffer
         if g:slimv_repl_split
+            let s:last_winnr = bufwinnr( "%" ) + 1
             execute "split " . s:repl_name
         else
             execute "edit " . s:repl_name
@@ -709,7 +728,7 @@ function! SlimvOpenReplBuffer()
             let repl_win = bufwinnr( repl_buf )
             if repl_win == -1
                 " Create windows
-                execute "split +buffer " . repl_buf
+                execute "split " . s:repl_name
             else
                 " Switch to the REPL window
                 if winnr() != repl_win
@@ -826,6 +845,14 @@ function! SlimvSend( args, open_buffer )
     call SlimvClientCommand()
     if g:slimv_client == ''
         return
+    endif
+
+    let repl_buf = bufnr( s:repl_name )
+    if repl_buf != -1
+        let winnr = bufwinnr( "%" )
+        if winnr != bufwinnr( repl_buf )
+            let s:last_winnr = winnr
+        endif
     endif
 
     if a:open_buffer
@@ -1246,7 +1273,7 @@ endfunction
 function! SlimvMacroexpandGeneral( command )
     normal! 99[(
     let line = getline( "." )
-    if match( line, 'defmacro' ) < 0
+    if match( line, 'defmacro\s' ) < 0
         " The form does not contain 'defmacro', put it in a macroexpand block
         call SlimvSelectForm()
         let m = "(" . a:command . " '" . SlimvGetSelection() . ")"
