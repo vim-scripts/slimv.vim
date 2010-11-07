@@ -1,7 +1,7 @@
 " paredit.vim:
 "               Paredit mode for Slimv
-" Version:      0.6.3
-" Last Change:  04 Sep 2010
+" Version:      0.7.1
+" Last Change:  07 Nov 2010
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -60,6 +60,9 @@ let s:any_wsopen_char    = '\s\|(\|\['
 let s:any_wsclose_char   = '\s\|)\|\]'
 let s:any_macro_prefix   = "'" . '\|`\|#\|@\|\~'
 
+" Repeat count for some remapped edit functions (like 'd')
+let s:repeat             = 0
+
 let s:yank_pos           = []
 
 " =====================================================================
@@ -68,72 +71,220 @@ let s:yank_pos           = []
 
 " Buffer specific initialization
 function! PareditInitBuffer()
-    "  Buffer specific keybindings
-    inoremap <buffer> <expr>   (            PareditInsertOpening('(',')')
-    inoremap <buffer> <expr>   )            PareditInsertClosing('(',')')
-    inoremap <buffer> <expr>   [            PareditInsertOpening('[',']')
-    inoremap <buffer> <expr>   ]            PareditInsertClosing('[',']')
-    inoremap <buffer> <expr>   "            PareditInsertQuotes()
-    inoremap <buffer> <expr>   <BS>         PareditBackspace(0)
-    inoremap <buffer> <expr>   <Del>        PareditDel()
-    nnoremap <buffer> <silent> (            :<C-U>call PareditFindOpening('(',')',0)<CR>
-    nnoremap <buffer> <silent> )            :<C-U>call PareditFindClosing('(',')',0)<CR>
-    vnoremap <buffer> <silent> (            <Esc>:<C-U>call PareditFindOpening('(',')',1)<CR>
-    vnoremap <buffer> <silent> )            <Esc>:<C-U>call PareditFindClosing('(',')',1)<CR>
-    nnoremap <buffer> <silent> x            :<C-U>call PareditEraseFwd()<CR>
-    nnoremap <buffer> <silent> <Del>        :<C-U>call PareditEraseFwd()<CR>
-    nnoremap <buffer> <silent> X            :<C-U>call PareditEraseBck()<CR>
-    nnoremap <buffer> <silent> s            :<C-U>call PareditEraseFwd()<CR>i
-    nnoremap <buffer> <silent> D            :<C-U>call PareditEraseFwdLine()<CR>
-    nnoremap <buffer> <silent> C            :<C-U>call PareditEraseFwdLine()<CR>A
-    nnoremap <buffer> <silent> dd           :<C-U>call PareditEraseLine()<CR>
-    nnoremap <buffer> <silent> cc           0:<C-U>call PareditEraseFwdLine()<CR>A
-    nnoremap <buffer> <silent> <Leader>w(   :<C-U>call PareditWrap('(',')')<CR>
-    vnoremap <buffer> <silent> <Leader>w(   :<C-U>call PareditWrapSelection('(',')')<CR>
-    nnoremap <buffer> <silent> <Leader>w[   :<C-U>call PareditWrap('[',']')<CR>
-    vnoremap <buffer> <silent> <Leader>w[   :<C-U>call PareditWrapSelection('[',']')<CR>
-    nnoremap <buffer> <silent> <Leader>w"   :<C-U>call PareditWrap('"','"')<CR>
-    vnoremap <buffer> <silent> <Leader>w"   :<C-U>call PareditWrapSelection('"','"')<CR>
+    if g:paredit_mode
+        " Paredit mode is on: add buffer specific keybindings
+        inoremap <buffer> <expr>   (            PareditInsertOpening('(',')')
+        inoremap <buffer> <expr>   )            PareditInsertClosing('(',')')
+        inoremap <buffer> <expr>   [            PareditInsertOpening('[',']')
+        inoremap <buffer> <expr>   ]            PareditInsertClosing('[',']')
+        inoremap <buffer> <expr>   "            PareditInsertQuotes()
+        inoremap <buffer> <expr>   <BS>         PareditBackspace(0)
+        inoremap <buffer> <expr>   <Del>        PareditDel()
+        nnoremap <buffer> <silent> (            :<C-U>call PareditFindOpening('(',')',0)<CR>
+        nnoremap <buffer> <silent> )            :<C-U>call PareditFindClosing('(',')',0)<CR>
+        vnoremap <buffer> <silent> (            <Esc>:<C-U>call PareditFindOpening('(',')',1)<CR>
+        vnoremap <buffer> <silent> )            <Esc>:<C-U>call PareditFindClosing('(',')',1)<CR>
+        nnoremap <buffer> <silent> x            :<C-U>call PareditEraseFwd()<CR>
+        nnoremap <buffer> <silent> <Del>        :<C-U>call PareditEraseFwd()<CR>
+        nnoremap <buffer> <silent> X            :<C-U>call PareditEraseBck()<CR>
+        nnoremap <buffer> <silent> s            :<C-U>call PareditEraseFwd()<CR>i
+        nnoremap <buffer> <silent> D            v$:<C-U>call PareditDelete(visualmode(),1)<CR>
+        nnoremap <buffer> <silent> C            v$:<C-U>call PareditChange(visualmode(),1)<CR>
+        nnoremap <buffer> <silent> d            :<C-U>call PareditSetDelete(v:count)<CR>g@
+        vnoremap <buffer> <silent> d            :<C-U>call PareditDelete(visualmode(),1)<CR>
+        vnoremap <buffer> <silent> x            :<C-U>call PareditDelete(visualmode(),1)<CR>
+        vnoremap <buffer> <silent> <Del>        :<C-U>call PareditDelete(visualmode(),1)<CR>
+        nnoremap <buffer> <silent> c            :set opfunc=PareditChange<CR>g@
+        vnoremap <buffer> <silent> c            :<C-U>call PareditChange(visualmode(),1)<CR>
+        nnoremap <buffer> <silent> dd           :<C-U>call PareditDeleteLines()<CR>
+        nnoremap <buffer> <silent> cc           :<C-U>call PareditChangeLines()<CR>
+        nnoremap <buffer> <silent> p            :<C-U>call PareditPut('p')<CR>
+        nnoremap <buffer> <silent> P            :<C-U>call PareditPut('P')<CR>
+        nnoremap <buffer> <silent> <Leader>w(   :<C-U>call PareditWrap('(',')')<CR>
+        vnoremap <buffer> <silent> <Leader>w(   :<C-U>call PareditWrapSelection('(',')')<CR>
+        nnoremap <buffer> <silent> <Leader>w[   :<C-U>call PareditWrap('[',']')<CR>
+        vnoremap <buffer> <silent> <Leader>w[   :<C-U>call PareditWrapSelection('[',']')<CR>
+        nnoremap <buffer> <silent> <Leader>w"   :<C-U>call PareditWrap('"','"')<CR>
+        vnoremap <buffer> <silent> <Leader>w"   :<C-U>call PareditWrapSelection('"','"')<CR>
 
-    if g:paredit_shortmaps
-        " Shorter keymaps: old functionality of KEY is remapped to <Leader>KEY
-        nnoremap <buffer> <silent> <            :<C-U>call PareditMoveLeft()<CR>
-        nnoremap <buffer> <silent> >            :<C-U>call PareditMoveRight()<CR>
-        nnoremap <buffer> <silent> O            :<C-U>call PareditSplit()<CR>
-        nnoremap <buffer> <silent> J            :<C-U>call PareditJoin()<CR>
-        nnoremap <buffer> <silent> W            :<C-U>call PareditWrap()<CR>
-        vnoremap <buffer> <silent> W            :<C-U>call PareditWrapSelection()<CR>
-        nnoremap <buffer> <silent> S            :<C-U>call PareditSplice()<CR>
-        nnoremap <buffer> <silent> <Leader><    :<C-U>normal! <<CR>
-        nnoremap <buffer> <silent> <Leader>>    :<C-U>normal! ><CR>
-        nnoremap <buffer> <silent> <Leader>O    :<C-U>normal! O<CR>
-        nnoremap <buffer> <silent> <Leader>J    :<C-U>normal! J<CR>
-        nnoremap <buffer> <silent> <Leader>W    :<C-U>normal! W<CR>
-        vnoremap <buffer> <silent> <Leader>W    :<C-U>normal! W<CR>
-        nnoremap <buffer> <silent> <Leader>S    :<C-U>normal! S<CR>
+        if g:paredit_shortmaps
+            " Shorter keymaps: old functionality of KEY is remapped to <Leader>KEY
+            nnoremap <buffer> <silent> <            :<C-U>call PareditMoveLeft()<CR>
+            nnoremap <buffer> <silent> >            :<C-U>call PareditMoveRight()<CR>
+            nnoremap <buffer> <silent> O            :<C-U>call PareditSplit()<CR>
+            nnoremap <buffer> <silent> J            :<C-U>call PareditJoin()<CR>
+            nnoremap <buffer> <silent> W            :<C-U>call PareditWrap()<CR>
+            vnoremap <buffer> <silent> W            :<C-U>call PareditWrapSelection()<CR>
+            nnoremap <buffer> <silent> S            :<C-U>call PareditSplice()<CR>
+            nnoremap <buffer> <silent> <Leader><    :<C-U>normal! <<CR>
+            nnoremap <buffer> <silent> <Leader>>    :<C-U>normal! ><CR>
+            nnoremap <buffer> <silent> <Leader>O    :<C-U>normal! O<CR>
+            nnoremap <buffer> <silent> <Leader>J    :<C-U>normal! J<CR>
+            nnoremap <buffer> <silent> <Leader>W    :<C-U>normal! W<CR>
+            vnoremap <buffer> <silent> <Leader>W    :<C-U>normal! W<CR>
+            nnoremap <buffer> <silent> <Leader>S    :<C-U>normal! S<CR>
+        else
+            " Longer keymaps with <Leader> prefix
+            nnoremap <buffer> <silent> S            V:<C-U>call PareditChange(visualmode(),1)<CR>
+            nnoremap <buffer> <silent> <Leader><    :<C-U>call PareditMoveLeft()<CR>
+            nnoremap <buffer> <silent> <Leader>>    :<C-U>call PareditMoveRight()<CR>
+            nnoremap <buffer> <silent> <Leader>O    :<C-U>call PareditSplit()<CR>
+            nnoremap <buffer> <silent> <Leader>J    :<C-U>call PareditJoin()<CR>
+            nnoremap <buffer> <silent> <Leader>W    :<C-U>call PareditWrap('(',')')<CR>
+            vnoremap <buffer> <silent> <Leader>W    :<C-U>call PareditWrapSelection('(',')')<CR>
+            nnoremap <buffer> <silent> <Leader>S    :<C-U>call PareditSplice()<CR>
+        endif
     else
-        " Longer keymaps with <Leader> prefix
-        nnoremap <buffer> <silent> S            0:<C-U>call PareditEraseFwdLine()<CR>A
-        nnoremap <buffer> <silent> <Leader><    :<C-U>call PareditMoveLeft()<CR>
-        nnoremap <buffer> <silent> <Leader>>    :<C-U>call PareditMoveRight()<CR>
-        nnoremap <buffer> <silent> <Leader>O    :<C-U>call PareditSplit()<CR>
-        nnoremap <buffer> <silent> <Leader>J    :<C-U>call PareditJoin()<CR>
-        nnoremap <buffer> <silent> <Leader>W    :<C-U>call PareditWrap('(',')')<CR>
-        vnoremap <buffer> <silent> <Leader>W    :<C-U>call PareditWrapSelection('(',')')<CR>
-        nnoremap <buffer> <silent> <Leader>S    :<C-U>call PareditSplice()<CR>
+        " Paredit mode is off: remove keybindings
+        iunmap <buffer> (
+        iunmap <buffer> )
+        iunmap <buffer> [
+        iunmap <buffer> ]
+        iunmap <buffer> "
+        iunmap <buffer> <BS>
+        iunmap <buffer> <Del>
+        unmap  <buffer> (
+        unmap  <buffer> )
+        unmap  <buffer> x
+        unmap  <buffer> <Del>
+        unmap  <buffer> X
+        unmap  <buffer> s
+        unmap  <buffer> D
+        unmap  <buffer> C
+        unmap  <buffer> d
+        unmap  <buffer> c
+        unmap  <buffer> dd
+        unmap  <buffer> cc
     endif
+endfunction
+
+" General Paredit operator function
+function! PareditOpfunc( func, type, visualmode )
+    let sel_save = &selection
+    let ve_save = &virtualedit
+    set virtualedit=all
+    let reg_save = @@
+
+    if a:visualmode  " Invoked from Visual mode, use '< and '> marks.
+        silent exe "normal! `<" . a:type . "`>"
+    elseif a:type == 'line'
+        let &selection = "inclusive"
+        silent exe "normal! '[V']"
+    elseif a:type == 'block'
+        let &selection = "inclusive"
+        silent exe "normal! `[\<C-V>`]"
+    else
+        let &selection = "inclusive"
+        silent exe "normal! `[v`]"
+    endif
+
+    if !g:paredit_mode || a:visualmode && a:type == 'block' || a:type == "\<C-V>"
+        " Block mode is too difficult to handle at the moment
+        silent exe "normal! d"
+        let putreg = getreg( '"' )
+    else
+        silent exe "normal! y"
+        let putreg = getreg( '"' )
+
+        " Find and keep unbalanced matched characters in the region
+        let matched = s:GetMatchedChars( putreg, s:InsideString( "'<" ), s:InsideComment( "'<" ) )
+        let matched = s:Unbalanced( matched )
+        let matched = substitute( matched, '\s', '', 'g' )
+
+        if matched == ''
+            silent exe "normal! gvx"
+        else
+            silent exe "normal! gvc" . matched
+            silent exe "normal! l"
+        endif
+    endif
+
+    let &selection = sel_save
+    let &virtualedit = ve_save
+    let @@ = reg_save
+    call setreg( '"', putreg ) 
+endfunction
+
+" Set delete mode also saving repeat count
+function! PareditSetDelete( count )
+    let s:repeat = a:count
+    set opfunc=PareditDelete
+endfunction
+
+" General delete operator handling
+function! PareditDelete( type, ... )
+    call PareditOpfunc( 'd', a:type, a:0 )
+    if s:repeat > 1
+        call feedkeys( (s:repeat-1) . "." )
+    endif
+    let s:repeat = 0
+endfunction
+
+" General change operator handling
+function! PareditChange( type, ... )
+    call PareditOpfunc( 'c', a:type, a:0 )
+    startinsert
+endfunction
+
+" Delete v:count number of lines
+function! PareditDeleteLines()
+    if v:count > 1
+        silent exe "normal! V" . (v:count-1) . "j\<Esc>"
+    else
+        silent exe "normal! V\<Esc>"
+    endif
+    call PareditDelete(visualmode(),1)
+endfunction
+
+" Change v:count number of lines
+function! PareditChangeLines()
+    if v:count > 1
+        silent exe "normal! V" . (v:count-1) . "j\<Esc>"
+    else
+        silent exe "normal! V\<Esc>"
+    endif
+    call PareditChange(visualmode(),1)
+endfunction
+
+" Paste text from put register in a balanced way
+function! PareditPut( cmd )
+    let reg_save = @@
+    let putreg = getreg( '"' )
+
+    " Find unpaired matched characters by eliminating paired ones
+    let matched = s:GetMatchedChars( putreg, s:InsideString( '.' ), s:InsideComment( '.' ) )
+    let matched = s:Unbalanced( matched )
+
+    " Replace all unpaired matched characters with a space in order to keep balance
+    let i = 0
+    while i < len( putreg )
+        if matched[i] !~ '\s'
+            let putreg = strpart( putreg, 0, i ) . ' ' . strpart( putreg, i+1 )
+        endif
+        let i = i + 1
+    endwhile
+
+    " Store balanced text in put register and call the appropriate put command
+    call setreg( '"', putreg ) 
+    if v:count > 1
+        silent exe "normal! " . v:count . a:cmd
+    else
+        silent exe "normal! " . a:cmd
+    endif
+    let @@ = reg_save
 endfunction
 
 " Toggle paredit mode
 function! PareditToggle()
     let g:paredit_mode = 1 - g:paredit_mode
     echo g:paredit_mode ? 'Paredit mode on' : 'Paredit mode off'
+    call PareditInitBuffer()
 endfunction
 
 " Does the current syntax item match the given regular expression?
-function! s:SynIDMatch( regexp, match_eol )
-    let line = line('.')
-    let col  = col('.')
+function! s:SynIDMatch( regexp, pos, match_eol )
+    let line = line( a:pos )
+    let col  = col ( a:pos )
     if a:match_eol && col > len( getline( line ) )
         let col = col - 1
     endif
@@ -141,13 +292,13 @@ function! s:SynIDMatch( regexp, match_eol )
 endfunction
 
 " Is the current cursor position inside a comment?
-function! s:InsideComment()
-    return s:SynIDMatch( '[Cc]omment', 1 )
+function! s:InsideComment( ... )
+    return s:SynIDMatch( '[Cc]omment', a:0 ? a:1 : '.', 1 )
 endfunction
 
 " Is the current cursor position inside a string?
-function! s:InsideString()
-    return s:SynIDMatch( '[Ss]tring', 0 )
+function! s:InsideString( ... )
+    return s:SynIDMatch( '[Ss]tring', a:0 ? a:1 : '.', 0 )
 endfunction
 
 " Autoindent current top level form
@@ -215,6 +366,65 @@ function! s:IsBalanced()
         return 0
     endif
     return 1
+endfunction
+
+" Filter out all non-matched characters from the region
+function! s:GetMatchedChars( lines, start_in_string, start_in_comment )
+    let inside_string  = a:start_in_string
+    let inside_comment = a:start_in_comment
+    let matched = repeat( ' ', len( a:lines ) )
+    let i = 0
+    while i < len( a:lines )
+        if inside_string
+            " We are inside a string, skip parens, wait for closing '"'
+            " but skip escaped \" characters
+            if a:lines[i] == '"' && a:lines[i-1] != '\'
+                let matched = strpart( matched, 0, i ) . a:lines[i] . strpart( matched, i+1 )
+                let inside_string = 0
+            endif
+        elseif inside_comment
+            " We are inside a comment, skip parens, wait for end of line
+            if a:lines[i] == "\n"
+                let inside_comment = 0
+            endif
+        else
+            " We are outside of strings and comments, now we shall count parens
+            if a:lines[i] == '"'
+                let matched = strpart( matched, 0, i ) . a:lines[i] . strpart( matched, i+1 )
+                let inside_string = 1
+            endif
+            if a:lines[i] == ';'
+                let inside_comment = 1
+            endif
+            if a:lines[i] == '(' || a:lines[i] == '[' || a:lines[i] == ')' || a:lines[i] == ']'
+                let matched = strpart( matched, 0, i ) . a:lines[i] . strpart( matched, i+1 )
+            endif
+        endif
+        let i = i + 1
+    endwhile
+    return matched
+endfunction
+
+" Find unpaired matched characters by eliminating paired ones
+function! s:Unbalanced( matched )
+    let matched = a:matched
+    let tmp = matched
+    while 1
+        let matched = tmp
+        let tmp = substitute( tmp, '(\(\s*\))',   ' \1 ', 'g')
+        let tmp = substitute( tmp, '\[\(\s*\)\]', ' \1 ', 'g')
+        let tmp = substitute( tmp, '"\(\s*\)"',   ' \1 ', 'g')
+        if tmp == matched
+            " All paired chars eliminated
+            let tmp = substitute( tmp, ')\(\s*\)(',   ' \1 ', 'g')
+            let tmp = substitute( tmp, '\]\(\s*\)\[', ' \1 ', 'g')
+            if tmp == matched
+                " Also no more inverse pairs can be eliminated
+                break
+            endif
+        endif
+    endwhile
+    return matched
 endfunction
 
 " Find opening matched character
@@ -390,7 +600,6 @@ endfunction
 
 " Add position to the yank list
 function! s:AddYankPos( pos )
-"echo input('111 '.a:pos)
     let s:yank_pos = [a:pos] + s:yank_pos
 endfunction
 
@@ -443,7 +652,7 @@ function! s:EraseFwd( count, startcol )
             call s:AddYankPos( len(reg) )
             let pos = pos + 1
             normal! l
-        elseif pos < len(line)
+        elseif pos < len(line) && pos >= a:startcol
             " Erasing a non-special character
             let reg = reg . line[pos]
             let line = strpart( line, 0, pos ) . strpart( line, pos+1 )
@@ -519,73 +728,6 @@ function! PareditEraseBck()
 
     call s:InitYankPos()
     call s:EraseBck( v:count1 )
-endfunction
-
-" Forward erasing character till the end of line in normal mode
-" Keeping the balanced state
-function! s:EraseFwdLine( startcol )
-    let lastcol = -1
-    let lastlen = -1
-    while col( '.' ) != lastcol || len( getline( '.' ) ) != lastlen
-        let lastcol = col( '.' )
-        let lastlen = len( getline( '.' ) )
-        let line = getline( '.' )
-        if s:InsideComment()
-            normal! D
-            if v:count == 0
-                return
-            endif
-        else
-            call s:EraseFwd( 1, a:startcol )
-        endif
-    endwhile
-endfunction
-
-" Forward erasing character till the end of line in normal mode
-" But first check if we are allowed to do it in paredit way
-function! PareditEraseFwdLine()
-    if !g:paredit_mode || !s:IsBalanced()
-        if v:count > 0
-            silent execute 'normal! ' . v:count . 'D'
-        else
-            normal! D
-        endif
-        return
-    endif
-
-    call s:InitYankPos()
-    call s:EraseFwdLine( col( '.' ) - 1 )
-endfunction
-
-" Erasing all characters in the line in normal mode
-" Keeping the balanced state
-function! PareditEraseLine()
-    if !g:paredit_mode || !s:IsBalanced()
-        if v:count > 0
-            silent execute 'normal! ' . v:count . 'dd'
-        else
-            normal! dd
-        endif
-        return
-    endif
-
-    normal! 0
-    call s:InitYankPos()
-    let c = v:count1
-    while c > 0
-        call s:EraseFwdLine( -1 )
-        if len( getline( '.' ) ) == 0
-            let reg = @"
-            normal! dd
-            let @" = reg . "\n"
-        elseif c > 1
-            normal! J
-            let @" = @" . "\n"
-        endif
-        let c = c - 1
-    endwhile
-
-    normal! ==
 endfunction
 
 " Find beginning of previous element (atom or sub-expression) in a form
