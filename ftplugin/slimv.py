@@ -4,8 +4,8 @@
 #
 # Client/Server code for Slimv
 # slimv.py:     Client/Server code for slimv.vim plugin
-# Version:      0.7.4
-# Last Change:  06 Dec 2010
+# Version:      0.7.5
+# Last Change:  30 Dec 2010
 # Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 # License:      This file is placed in the public domain.
 #               No warranty, express or implied.
@@ -37,7 +37,8 @@ slimv_path  = 'slimv.py'    # Path of this script (determined later)
 run_cmd     = ''            # Complex server-run command (if given via command line args)
 
 # Check if we're running Windows or Mac OS X, otherwise assume Linux
-mswindows = (sys.platform == 'win32')
+# Under Cygwin we run the Windows Python
+mswindows = (sys.platform == 'win32' or sys.platform == 'cygwin')
 darwin = (sys.platform == 'darwin')
 
 def log( s, level ):
@@ -99,7 +100,17 @@ def start_server():
     time.sleep( 2.0 )
 
 
-def connect_server():
+def send_line( server, line ):
+    """Send a line to the server:
+       first send line length in 4 bytes, then send the line itself.
+    """
+    l = len(line)
+    lstr = chr(l&255) + chr((l>>8)&255) + chr((l>>16)&255) + chr((l>>24)&255)
+    server.send( str2stream( lstr ) )     # send message length first
+    server.send( str2stream( line ) )     # then the message itself
+
+
+def connect_server( output_filename ):
     """Try to connect server, if server not found then spawn it.
        Return socket object on success, None on failure.
     """
@@ -117,6 +128,8 @@ def connect_server():
             s = socket.socket( socket.AF_INET, socket.SOCK_STREAM )
             try:
                 s.connect( ( 'localhost', PORT ) )
+                if output_filename != '':
+                    send_line( s, 'SLIMV::OUTPUT::' + output_filename )
             except socket.error:
                 s.close()
                 s =  None
@@ -126,27 +139,20 @@ def connect_server():
     return s
 
 
-def send_line( server, line ):
-    """Send a line to the server:
-       first send line length in 4 bytes, then send the line itself.
-    """
-    l = len(line)
-    lstr = chr(l&255) + chr((l>>8)&255) + chr((l>>16)&255) + chr((l>>24)&255)
-    server.send( str2stream( lstr ) )     # send message length first
-    server.send( str2stream( line ) )     # then the message itself
-
-
-def client_file( input_filename ):
+def client_file( input_filename, output_filename ):
     """Main client routine - input file version:
        starts server if needed then send text to server.
        Input is read from input file.
     """
-    s = connect_server()
+    s = connect_server( output_filename )
     if s is None:
         return
 
     try:
-        file = open( input_filename, 'rt' )
+        if input_filename != '':
+            file = open( input_filename, 'rt' )
+        else:
+            file = sys.stdin
         try:
             # Send contents of the file to the server
             lines = ''
@@ -154,7 +160,8 @@ def client_file( input_filename ):
                 lines = lines + line
             send_line( s, lines )
         finally:
-            file.close()
+            if input_filename != '':
+                file.close()
     except:
         return
 
@@ -515,10 +522,11 @@ def usage():
 if __name__ == '__main__':
 
     EXIT, SERVER, CLIENT = list( range( 3 ) )
-    mode = EXIT
+    mode = CLIENT
     slimv_path = sys.argv[0]
     python_path = sys.executable
     input_filename = ''
+    output_filename = ''
 
     # Always this trouble with the path/filenames containing spaces:
     # enclose them in double quotes
@@ -527,13 +535,14 @@ if __name__ == '__main__':
 
     # Get command line options
     try:
-        opts, args = getopt.getopt( sys.argv[1:], '?hcsf:p:l:r:d:', \
-                                    ['help', 'client', 'server', 'file=', 'port=', 'lisp=', 'run=', 'debug='] )
+        opts, args = getopt.getopt( sys.argv[1:], '?hsf:o:p:l:r:d:', \
+                                    ['help', 'server', 'file=', 'output=', 'port=', 'lisp=', 'run=', 'debug='] )
 
         # Process options
         for o, a in opts:
             if o in ('-?', '-h', '--help'):
                 usage()
+                mode = EXIT
                 break
             if o in ('-p', '--port'):
                 try:
@@ -553,11 +562,10 @@ if __name__ == '__main__':
                     pass
             if o in ('-s', '--server'):
                 mode = SERVER
-            if o in ('-c', '--client'):
-                mode = CLIENT
             if o in ('-f', '--file'):
-                mode = CLIENT
                 input_filename = a
+            if o in ('-o', '--output'):
+                output_filename = a
 
     except getopt.GetoptError:
         # print help information and exit:
@@ -576,9 +584,6 @@ if __name__ == '__main__':
             run_cmd = run_cmd.replace( '@l', escape_path( lisp_path ) )
             run_cmd = run_cmd.replace( '@@', '@' )
             log( run_cmd, 1 )
-        if input_filename != '':
-            client_file( input_filename )
-        else:
-            start_server()
+        client_file( input_filename, output_filename )
 
 # --- END OF FILE ---

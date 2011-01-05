@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.7.4
-" Last Change:  14 Dec 2010
+" Version:      0.7.5
+" Last Change:  02 Jan 2011
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -15,11 +15,13 @@ endif
 
 let g:slimv_loaded = 1
 
+let g:slimv_windows = 0
+let g:slimv_cygwin  = 0
+
 if has( 'win32' ) || has( 'win95' ) || has( 'win64' ) || has( 'win16' )
     let g:slimv_windows = 1
-else
-    " This means Linux only at the moment
-    let g:slimv_windows = 0
+elseif has( 'win32unix' )
+    let g:slimv_cygwin = 1
 endif
 
 
@@ -29,12 +31,13 @@ endif
 
 " Try to autodetect Python executable
 function! SlimvAutodetectPython()
-    if executable( 'python' )
+    if !g:slimv_cygwin && executable( 'python' )
         return 'python'
     endif
 
-    if g:slimv_windows
+    if g:slimv_windows || g:slimv_cygwin
         " Try to find Python on the standard installation places
+        " For Cygwin we need to use the Windows Python instead of the Cygwin Python
         let pythons = split( globpath( 'c:/python*,c:/Program Files/python*', 'python.exe' ), '\n' )
         if len( pythons ) > 0
             return pythons[0]
@@ -91,11 +94,22 @@ function! SlimvClientCommand()
     endif
 endfunction
 
+" Convert Cygwin path to Windows path, if needed
+function! s:Cygpath( path )
+    let path = a:path
+    if g:slimv_cygwin
+        let path = system( 'cygpath -w ' . path )
+        let path = substitute( path, "\n", "", "g" )
+        let path = substitute( path, "\\", "/", "g" )
+    endif
+    return path
+endfunction
+
 " Find slimv.py in the Vim ftplugin directory (if not given in vimrc)
 if !exists( 'g:slimv_path' )
     let plugins = split( globpath( &runtimepath, 'ftplugin/**/slimv.py'), '\n' )
     if len( plugins ) > 0
-        let g:slimv_path = plugins[0]
+        let g:slimv_path = s:Cygpath( plugins[0] )
     else
         let g:slimv_path = 'slimv.py'
     endif
@@ -121,12 +135,6 @@ endfunction
 " =====================================================================
 "  Global variable definitions
 " =====================================================================
-
-" Leave client window open for debugging purposes
-" (works only on Windows at the moment)
-if !exists( 'g:slimv_debug_client' )
-    let g:slimv_debug_client = 0
-endif
 
 " TCP port number to use
 if !exists( 'g:slimv_port' )
@@ -163,7 +171,7 @@ if !exists( 'g:slimv_repl_dir' )
     if g:slimv_windows
         let g:slimv_repl_dir = matchstr( tempname(), '.*\\' )
     else
-        let g:slimv_repl_dir = '/tmp/'
+        let g:slimv_repl_dir = s:Cygpath( '/tmp/' )
     endif
 endif
 
@@ -611,7 +619,6 @@ function! SlimvOpenReplBuffer()
     redraw
     let s:last_size = 0
 
-    call SlimvSend( ['SLIMV::OUTPUT::' . s:repl_name ], 0 )
     call SlimvRefreshReplBuffer()
 endfunction
 
@@ -716,31 +723,16 @@ function! SlimvSend( args, open_buffer )
         call SlimvOpenReplBuffer()
     endif
 
-    " Build a temporary file from the form to be evaluated
-    let ar = []
-    let i = 0
-    while i < len( a:args )
-        call extend( ar, split( a:args[i], '\n' ) )
-        let i = i + 1
-    endwhile
-
-    let tmp = tempname()
-    try
-        call writefile( ar, tmp )
-
-        " Send the file to the client for evaluation
-        if g:slimv_debug_client == 0
-            let result = system( g:slimv_client . ' -f ' . tmp )
-        else
-            execute '!' . g:slimv_client . ' -f ' . tmp
-        endif
-    finally
-        call delete(tmp)
-    endtry
+    " Send the lines to the client for evaluation
+    let text = join( a:args, "\n" ) . "\n"
+    let result = system( g:slimv_client . ' -o ' . s:repl_name, text )
+    if result != ''
+        " Treat any output as error message
+        call SlimvErrorWait( result )
+    endif
 
     if a:open_buffer
-        " Wait a little for the REPL output and refresh REPL buffer
-        " then return to the caller buffer/window
+        " Refresh REPL buffer then return to the caller buffer/window
         call SlimvRefreshReplBuffer()
         if g:slimv_repl_split && repl_win == -1
             execute "normal! \<C-w>p"
@@ -1016,7 +1008,6 @@ endfunction
 " Start and connect slimv server
 " This is a quite dummy function that just evaluates the empty string
 function! SlimvConnectServer()
-    "call SlimvEval( [''] )
     call SlimvSend( ['SLIMV::OUTPUT::' . s:repl_name ], 0 )
 endfunction
 
@@ -1326,10 +1317,11 @@ endfunction
 
 " Compile the current top-level form
 function! SlimvCompileDefun()
-    "TODO: handle double quote characters in form
     call SlimvSelectToplevelForm()
     call SlimvFindPackage()
-    call SlimvEvalForm1( g:slimv_template_compile_string, SlimvGetSelection() )
+    let form = SlimvGetSelection()
+    let form = substitute( form, '"', '\\\\"', 'g' )
+    call SlimvEvalForm1( g:slimv_template_compile_string, form )
 endfunction
 
 " Compile and load whole file
@@ -1347,9 +1339,9 @@ function! SlimvCompileFile()
 endfunction
 
 function! SlimvCompileRegion() range
-    "TODO: handle double quote characters in form
     let lines = SlimvGetRegion()
     let region = join( lines, ' ' )
+    let region = substitute( region, '"', '\\\\"', 'g' )
     call SlimvEvalForm1( g:slimv_template_compile_string, region )
 endfunction
 
