@@ -1,7 +1,7 @@
-*slimv.txt*                    Slimv                 Last Change: 05 Jan 2011
+*slimv.txt*                    Slimv                 Last Change: 21 Jan 2011
 
 Slimv                                                                  *slimv*
-                               Version 0.7.5
+                               Version 0.7.6
 
 The Superior Lisp Interaction Mode for Vim.
 This plugin is aimed to help Lisp development by interfacing between Vim and
@@ -405,6 +405,10 @@ buffer, so that only the separate REPL window is opened.
                                                            *g:slimv_repl_split*
 Open the Lisp REPL buffer in a split window or in a separate buffer in Vim.
 Used only when |g:slimv_repl_open| is nonzero.
+The default is to use split window. If you prefer having REPL being in a hidden
+buffer then set this option to zero. This way the REPL buffer will be opened
+at the first evaluation, but any subsequent evaluation will be performed
+silently, with the REPL buffer kept hidden.
 
                                                            *g:slimv_updatetime*
 The REPL buffer is refreshed at every keystroke or when the user doesn't press
@@ -1329,6 +1333,17 @@ FAQ                                                                 *slimv-faq*
 ===============================================================================
 CHANGE LOG                                                    *slimv-changelog*
 
+0.7.6  - Cursor potision is kept during evaluation.
+       - Most Slimv commands made silent.
+       - Bugfix: find defun start when cursor is on a comment.
+       - Bugfix: keep newlines in Compile-Region.
+       - Bugfix: infinite loop when selecting form in empty buffer.
+       - Bugfix: error when opening REPL buffer with g:slimv_repl_split=0.
+       - Bugfix: REPL blinking in insert mode when visualbell is on.
+       - Bugfix: added the comma to the list of macro prefix characters
+         (thanks to John Obbele).
+       - Bugfix: long/short Windows filename problem for REPL buffer.
+
 0.7.5  - Added Cygwin compatibility using the Windows Python
          (thanks to Jerome Baum).
        - Display client error message when eval was not successful.
@@ -1546,7 +1561,7 @@ Taylor R. Campbell for the Emacs paredit.el script.
 Thanks to the Vim community for testing, commenting and patching the script,
 especially to Philipp Marek, Vlad Hanciuta, Marcin Fatyga, Dmitry Petukhov,
 Daniel Solano Gómez, Brian Kropf, Len Weincier, Andreas Salwasser, Jon Thacker,
-Andrew Hills, Jerome Baum.
+Andrew Hills, Jerome Baum, John Obbele.
 Last but not least many thanks to my wife Andrea (for the Italians out there:
 hey, this is a female name in Hungary :) for her support and patience.
 
