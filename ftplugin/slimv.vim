@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.7.6
-" Last Change:  18 Jan 2011
+" Version:      0.7.7
+" Last Change:  17 Feb 2011
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -39,15 +39,19 @@ function! SlimvAutodetectPython()
         " Try to find Python on the standard installation places
         " For Cygwin we need to use the Windows Python instead of the Cygwin Python
         let pythons = split( globpath( 'c:/python*,c:/Program Files/python*', 'python.exe' ), '\n' )
-        if len( pythons ) > 0
-            return pythons[0]
+        if len( pythons ) == 0
+            " Go deeper in subdirectories
+            let pythons = split( globpath( 'c:/python*/**,c:/Program Files/python*/**', 'python.exe' ), '\n' )
+            if len( pythons ) == 0
+                return ''
+            endif
         endif
-        " Go deeper in subdirectories
-        let pythons = split( globpath( 'c:/python*/**,c:/Program Files/python*/**', 'python.exe' ), '\n' )
-        if len( pythons ) > 0
-            return pythons[0]
+        let pycmd = pythons[0]
+        if match( pycmd, ' ' ) >= 0
+            " Convert Python command to short 8.3 format if path contains spaces
+            let pycmd = fnamemodify( pycmd, ':8' )
         endif
-        return ''
+        return pycmd
     else
         return ''
     endif
@@ -466,6 +470,7 @@ function! SlimvRefreshReplBuffer()
     syntax on
     setlocal autoread
     call SlimvEndOfReplBuffer()
+    call SlimvMarkBufferEnd()
     set nomodified
 
     if repl_buf != this_buf
@@ -520,7 +525,6 @@ function! SlimvReplEnter()
     execute "au FileChangedRO " . g:slimv_repl_file . " :call SlimvRefreshModeOff()"
     call SlimvRefreshModeOn()
     call SlimvRefreshReplBuffer()
-    call SlimvMarkBufferEnd()
 endfunction
 
 " Called when leaving REPL buffer
@@ -532,9 +536,12 @@ function! SlimvReplLeave()
     catch /.*/
         " REPL menu not found, we cannot remove it
     endtry
-    call SlimvRefreshModeOn()
-    call SlimvRefreshReplBuffer()
-    call SlimvMarkBufferEnd()
+    if g:slimv_repl_split
+        call SlimvRefreshModeOn()
+        call SlimvRefreshReplBuffer()
+    else
+        call SlimvRefreshModeOff()
+    endif
 endfunction
 
 " Open a new REPL buffer or switch to the existing one
@@ -663,7 +670,9 @@ endfunction
 
 " Find starting '(' of a top level form
 function SlimvFindDefunStart()
-    while searchpair( '(', '', ')', 'bW', 'synIDattr(synID(line("."), col("."), 0), "name") =~ "[Ss]tring\\|[Cc]omment"' )
+    let l = line( '.' )
+    let matchb = max( [l-100, 1] )
+    while searchpair( '(', '', ')', 'bW', 'synIDattr(synID(line("."), col("."), 0), "name") =~ "[Ss]tring\\|[Cc]omment"', matchb )
     endwhile
 endfunction
 
@@ -1010,7 +1019,7 @@ endfunction
 " Start and connect slimv server
 " This is a quite dummy function that just evaluates the empty string
 function! SlimvConnectServer()
-    call SlimvSend( ['SLIMV::OUTPUT::' . s:repl_name ], 0 )
+    call SlimvSend( ['SLIMV::OUTPUT::' . s:repl_name ], g:slimv_repl_open )
 endfunction
 
 " Refresh REPL buffer continuously
