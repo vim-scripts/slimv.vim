@@ -1,7 +1,7 @@
 " slimv-lisp.vim:
 "               Lisp filetype plugin for Slimv
-" Version:      0.6.0
-" Last Change:  12 Apr 2010
+" Version:      0.8.0
+" Last Change:  02 Apr 2011
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -20,6 +20,10 @@ let g:slimv_lisp_loaded = 1
 " Returns list [Lisp executable, Lisp implementation]
 function! b:SlimvAutodetect()
     " Check the easy cases
+    if executable( 'sbcl' )
+        " Steel Bank Common Lisp
+        return ['sbcl', 'sbcl']
+    endif
     if executable( 'clisp' )
         " Common Lisp
         return ['clisp', 'clisp']
@@ -32,10 +36,6 @@ function! b:SlimvAutodetect()
         " Carnegie Mellon University Common Lisp
         return ['cmucl', 'cmu']
     endif
-    if executable( 'sbcl' )
-        " Steel Bank Common Lisp
-        return ['sbcl', 'sbcl']
-    endif
     if executable( 'ecl' )
         " Embeddable Common Lisp
         return ['ecl', 'ecl']
@@ -43,6 +43,22 @@ function! b:SlimvAutodetect()
     if executable( 'acl' )
         " Allegro Common Lisp
         return ['acl', 'allegro']
+    endif
+    if executable( 'mlisp' )
+        " Allegro Common Lisp
+        return ['mlisp', 'allegro']
+    endif
+    if executable( 'mlisp8' )
+        " Allegro Common Lisp
+        return ['mlisp8', 'allegro']
+    endif
+    if executable( 'alisp' )
+        " Allegro Common Lisp
+        return ['alisp', 'allegro']
+    endif
+    if executable( 'alisp8' )
+        " Allegro Common Lisp
+        return ['alisp8', 'allegro']
     endif
     if executable( 'lwl' )
         " LispWorks
@@ -59,15 +75,7 @@ function! b:SlimvAutodetect()
 
     if g:slimv_windows
         " Try to find Lisp on the standard installation places
-        let lisps = split( globpath( 'c:/*lisp*,c:/Program Files/*lisp*', '*lisp.exe' ), '\n' )
-        if len( lisps ) > 0
-            return [lisps[0], 'clisp']
-        endif
-        let lisps = split( globpath( 'c:/*lisp*/*,c:/Program Files/*lisp*/*', '*lisp.exe' ), '\n' )
-        if len( lisps ) > 0
-            return [lisps[0], 'clisp']
-        endif
-        let lisps = split( globpath( 'c:/*lisp*/**,c:/Program Files/*lisp*/**', '*lisp.exe' ), '\n' )
+        let lisps = split( globpath( 'c:/*lisp*,c:/*lisp*/*,c:/*lisp*/bin/*,c:/Program Files/*lisp*,c:/Program Files/*lisp*/*,c:/Program Files/*lisp*/bin/*', '*lisp.exe' ), '\n' )
         if len( lisps ) > 0
             return [lisps[0], 'clisp']
         endif
@@ -79,15 +87,19 @@ function! b:SlimvAutodetect()
         if len( lisps ) > 0
             return [lisps[0], 'cmu']
         endif
-        let lisps = split( globpath( 'c:/sbcl*,c:/Program Files/sbcl*', 'sbcl.exe' ), '\n' )
+        let lisps = split( globpath( 'c:/sbcl*,c:/Program Files/sbcl*,c:/Program Files/*lisp*/bin/sbcl*', 'sbcl.exe' ), '\n' )
         if len( lisps ) > 0
             return [lisps[0], 'sbcl']
+        endif
+        let lisps = split( globpath( 'c:/acl*,c:/Program Files/acl*,c:/Program Files/*lisp*/bin/acl*', '*lisp*.exe' ), '\n' )
+        if len( lisps ) > 0
+            return [lisps[0], 'allegro']
         endif
         let lisps = split( globpath( 'c:/ecl*,c:/Program Files/ecl*', 'ecl.exe' ), '\n' )
         if len( lisps ) > 0
             return [lisps[0], 'ecl']
         endif
-        let lisps = split( globpath( 'c:/ccl*,c:/Program Files/ccl*', 'wx86cl.exe' ), '\n' )
+        let lisps = split( globpath( 'c:/ccl*,c:/Program Files/ccl*,c:/Program Files/*lisp*/bin/ccl*', 'wx86cl.exe' ), '\n' )
         if len( lisps ) > 0
             return [lisps[0], 'clozure']
         endif

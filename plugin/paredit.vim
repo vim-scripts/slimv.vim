@@ -1,7 +1,7 @@
 " paredit.vim:
 "               Paredit mode for Slimv
-" Version:      0.7.7
-" Last Change:  14 Feb 2010
+" Version:      0.8.0
+" Last Change:  02 Apr 2011
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -15,6 +15,9 @@ if &cp || exists( 'g:paredit_loaded' )
 endif
 
 let g:paredit_loaded = 1
+
+" Needed to load filetype plugins
+filetype plugin on
 
 " =====================================================================
 "  Global variable definitions
@@ -553,6 +556,12 @@ function! PareditBackspace( repl_mode )
     if pos == 0
         " We are at the beginning of the line
         return "\<BS>"
+    elseif s:InsideString() && line[pos-1] =~ s:any_openclose_char
+        " Deleting a paren inside a string
+        return "\<BS>"
+    elseif s:InsideString() && pos > 1 && line[pos-2:pos-1] == '\"'
+        " Deleting an escaped double quote inside a string
+        return "\<BS>\<BS>"
     elseif line[pos-1] !~ s:any_matched_char
         " Deleting a non-special character
         return "\<BS>"
