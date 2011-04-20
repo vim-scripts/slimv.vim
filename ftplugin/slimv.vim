@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.8.0
-" Last Change:  15 Apr 2011
+" Version:      0.8.1
+" Last Change:  20 Apr 2011
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -471,6 +471,7 @@ let s:refresh_disabled = 0                                " Set this variable te
 let s:debug_activated = 0                                 " Are we in the SWANK debugger?
 let s:debug_move_cursor = 0                               " Move cursor to Restarts when debug activated
 let s:compiled_file = ''                                  " Name of the compiled file
+let s:au_curhold_set = 0                                  " Whether the autocommand has been set
 let s:skip_sc = 'synIDattr(synID(line("."), col("."), 0), "name") =~ "[Ss]tring\\|[Cc]omment"'
                                                           " Skip matches inside string or comment 
 
@@ -524,7 +525,6 @@ function! SlimvSwankResponse()
     redir END
 
     if s:swank_action != '' && msg != ''
-        "echo s:swank_action
         if s:swank_action == ':describe-symbol'
             echo msg
             echo input('Press ENTER to continue.')
@@ -549,6 +549,8 @@ function! SlimvCommand( cmd )
         " REPL buffer not loaded
         return
     endif
+    let repl_win = bufwinnr( repl_buf )
+    let this_win = winnr()
 
     if msg == ''
         " No new REPL output since the last refresh
@@ -561,8 +563,10 @@ function! SlimvCommand( cmd )
     if repl_buf != this_buf
         " Switch to the REPL buffer/window
         try
-            if g:slimv_repl_split
-                wincmd w
+            if g:slimv_repl_split && repl_win != -1
+                if this_win != repl_win
+                    execute repl_win . "wincmd w"
+                endif
             else
                 execute "buf " . repl_buf
             endif
@@ -601,10 +605,12 @@ function! SlimvCommand( cmd )
         stopinsert
     endif
 
-    if repl_buf != this_buf && !s:debug_activated
+    if repl_buf != this_buf && repl_win != -1 && !s:debug_activated
         " Switch back to the caller buffer/window
         if g:slimv_repl_split
-            wincmd w
+            if this_win != repl_win
+                execute this_win . "wincmd w"
+            endif
         else
             execute "buf " . this_buf
         endif
@@ -648,6 +654,8 @@ function! SlimvRefreshReplBuffer()
         " REPL buffer not loaded
         return
     endif
+    let repl_win = bufwinnr( repl_buf )
+    let this_win = winnr()
 
     if g:slimv_swank && s:swank_connected
         "execute 'python swank_output(' . repl_buf . ')'
@@ -668,8 +676,10 @@ function! SlimvRefreshReplBuffer()
     if repl_buf != this_buf
         " Switch to the REPL buffer/window
         try
-            if g:slimv_repl_split
-                wincmd w
+            if g:slimv_repl_split && repl_win != -1
+                if this_win != repl_win
+                    execute repl_win . "wincmd w"
+                endif
             else
                 execute "buf " . repl_buf
             endif
@@ -704,10 +714,12 @@ function! SlimvRefreshReplBuffer()
     call SlimvMarkBufferEnd()
     set nomodified
 
-    if repl_buf != this_buf
+    if repl_buf != this_buf && repl_win != -1 && !s:debug_activated
         " Switch back to the caller buffer/window
         if g:slimv_repl_split
-            wincmd w
+            if this_win != repl_win
+                execute this_win . "wincmd w"
+            endif
         else
             execute "buf " . this_buf
         endif
@@ -720,8 +732,9 @@ function! SlimvTimer()
     call SlimvRefreshReplBuffer()
     if g:slimv_repl_open
         if mode() == 'i' || mode() == 'I'
-            " Put an empty '<C-O>:<CR>' command into the typeahead buffer
-            call feedkeys("\<c-o>:\<cr>")
+            " Put '<Insert>' twice into the typeahead buffer, which should not do anything
+            " just switch to overwrite mode then back to insert mode
+            call feedkeys("\<insert>\<insert>")
         else
             " Put an incomplete 'f' command and an Esc into the typeahead buffer
             call feedkeys("f\e")
@@ -743,8 +756,11 @@ function! SlimvRefreshModeOn()
         execute "au CursorMoved  * :call SlimvRefreshReplBuffer()"
         execute "au CursorMovedI * :call SlimvRefreshReplBuffer()"
     endif
-    execute "au CursorHold   * :call SlimvTimer()"
-    execute "au CursorHoldI  * :call SlimvTimer()"
+    if ! s:au_curhold_set
+        let s:au_curhold_set = 1
+        execute "au CursorHold   * :call SlimvTimer()"
+        execute "au CursorHoldI  * :call SlimvTimer()"
+    endif
     call SlimvRefreshReplBuffer()
 endfunction
 
@@ -756,6 +772,7 @@ function! SlimvRefreshModeOff()
     endif
     execute "au! CursorHold"
     execute "au! CursorHoldI"
+    let s:au_curhold_set = 0
     set noreadonly
 endfunction
 
@@ -764,7 +781,6 @@ function! SlimvReplEnter()
     call SlimvAddReplMenu()
     execute "au FileChangedRO " . g:slimv_repl_file . " :call SlimvRefreshModeOff()"
     call SlimvRefreshModeOn()
-    call SlimvRefreshReplBuffer()
 endfunction
 
 " Called when leaving REPL buffer
@@ -778,7 +794,6 @@ function! SlimvReplLeave()
     endtry
     if g:slimv_repl_split
         call SlimvRefreshModeOn()
-        call SlimvRefreshReplBuffer()
     else
         call SlimvRefreshModeOff()
     endif
@@ -883,6 +898,17 @@ endfunction
 
 " Select symbol under cursor and return it
 function! SlimvSelectSymbol()
+    if SlimvGetFiletype() == 'clojure'
+        setlocal iskeyword+=~,#,&,\|,{,},!,?
+    else
+        setlocal iskeyword+=~,#,&,\|,{,},[,],!,?
+    endif
+    let symbol = expand('<cword>')
+    return symbol
+endfunction
+
+" Select symbol with possible prefixes under cursor and return it
+function! SlimvSelectSymbolExt()
     let save_iskeyword = &iskeyword
     if SlimvGetFiletype() == 'clojure'
         setlocal iskeyword+=~,#,&,\|,{,},!,?,'
@@ -973,10 +999,12 @@ endfunction
 
 " Execute the given SWANK command with current package defined
 function! SlimvCommandUsePackage( cmd )
+    let oldpos = getpos( '.' ) 
     call SlimvFindPackage()
     let s:refresh_disabled = 1
     call SlimvCommand( a:cmd )
     let s:swank_package = ''
+    call setpos( '.', oldpos ) 
     let s:refresh_disabled = 0
     call SlimvRefreshReplBuffer()
 endfunction
@@ -1359,6 +1387,7 @@ function! SlimvHandleEnter()
         call SlimvEval( ['[0]'] )
         return
     endif
+
     if line[0] == '['
         if line[0:3] == '[<<]'
             " Pop back up in the inspector
@@ -1369,6 +1398,15 @@ function! SlimvHandleEnter()
         endif
         if item != ''
             call SlimvEval( ['[' . item . ']'] )
+            return
+        endif
+    endif
+
+    if line[0] == '<'
+        " Inspector n-th action
+        let item = matchstr( line, '\d\+' )
+        if item != ''
+            call SlimvEval( ['<' . item . '>'] )
             return
         endif
     endif
@@ -1701,7 +1739,7 @@ endfunction
 " Switch trace off for the selected function (or all functions for swank)
 function! SlimvUntrace()
     if g:slimv_swank
-        if g:swank_connected
+        if s:swank_connected
             let s:refresh_disabled = 1
             call SlimvCommand( 'python swank_untrace_all()' )
             let s:refresh_disabled = 0
@@ -1733,9 +1771,9 @@ function! SlimvDisassemble()
     endif
 endfunction
 
-" Inspect symbol
+" Inspect symbol under cursor
 function! SlimvInspect()
-    let s = input( 'Inspect: ', SlimvSelectSymbol() )
+    let s = input( 'Inspect: ', SlimvSelectSymbolExt() )
     if s != ''
         if g:slimv_swank
             if s:swank_connected
@@ -2021,6 +2059,7 @@ function! SlimvCompileFile()
 endfunction
 
 function! SlimvCompileRegion() range
+    let oldpos = getpos( '.' ) 
     let lines = SlimvGetRegion()
     let region = join( lines, "\n" )
     call SlimvFindPackage()
@@ -2035,6 +2074,7 @@ function! SlimvCompileRegion() range
         let region = substitute( region, '"', '\\\\"', 'g' )
         call SlimvEvalForm1( g:slimv_template_compile_string, region )
     endif
+    call setpos( '.', oldpos ) 
 endfunction
 
 " ---------------------------------------------------------------------
@@ -2209,12 +2249,14 @@ endfunction
 function! SlimvComplete( findstart, base )
     if a:findstart
         " Locate the start of the symbol name
-        let line = getline( '.' )
-        let start = col( '.' ) - 1
-        while start > 0 && ( line[start - 1] =~ '\k' || match( '\*&', line[start - 1] ) >= 0 )
-            let start -= 1
-        endwhile
-        return start
+        if SlimvGetFiletype() == 'clojure'
+            setlocal iskeyword+=~,#,&,\|,{,},!,?
+        else
+            setlocal iskeyword+=~,#,&,\|,{,},[,],!,?
+        endif
+        let upto = strpart( getline( '.' ), 0, col( '.' ) - 1)
+        let p = match(upto, '\k\+$')
+        return p 
     else
         " Find all symbols starting with "a:base"
         if g:slimv_swank && s:swank_connected
