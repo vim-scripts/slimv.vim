@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.8.1
-" Last Change:  20 Apr 2011
+" Version:      0.8.2
+" Last Change:  30 Apr 2011
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -144,6 +144,9 @@ function! SlimvSwankCommand()
     if exists( 'g:slimv_swank_clojure' ) && SlimvGetFiletype() == 'clojure'
         return g:slimv_swank_clojure
     endif
+    if exists( 'g:slimv_swank_scheme' ) && SlimvGetFiletype() == 'scheme'
+        return g:slimv_swank_scheme
+    endif
     if exists( 'g:slimv_swank_cmd' )
         return g:slimv_swank_cmd
     endif
@@ -161,6 +164,14 @@ function! SlimvSwankCommand()
             endif
             let sclj = substitute( swanks[0], '\', '/', "g" )
             let cmd = g:slimv_lisp . ' -e "(load-file \"' . sclj . '\") (swank.swank/start-repl)" -r'
+        endif
+    elseif SlimvGetFiletype() == 'scheme'
+        let swanks = split( globpath( &runtimepath, 'slime/contrib/swank-mit-scheme.scm'), '\n' )
+        if len( swanks ) == 0
+            return ''
+        endif
+        if b:SlimvImplementation() == 'mit'
+            let cmd = '"' . g:slimv_lisp . '" --load "' . swanks[0] . '"'
         endif
     else
         " First check if SWANK is bundled with Slimv
@@ -936,6 +947,16 @@ function! SlimvSelectForm()
         let c = c - 1
     endwhile
     silent normal! "sy
+    let sel = SlimvGetSelection()
+    if sel == ''
+        call SlimvError( "Form is empty." )
+        return 0
+    elseif sel == '(' || sel == '['
+        call SlimvError( "Form is unbalanced." )
+        return 0
+    else
+        return 1
+    endif
 endfunction
 
 " Find starting '(' of a top level form
@@ -949,7 +970,7 @@ endfunction
 " Select top level form the cursor is inside and copy it to register 's'
 function! SlimvSelectDefun()
     call SlimvFindDefunStart()
-    call SlimvSelectForm()
+    return SlimvSelectForm()
 endfunction
 
 " Return the contents of register 's'
@@ -987,7 +1008,7 @@ endfunction
 " Find and add language specific package/namespace definition before the
 " cursor position and if exists then add it in front of the current selection
 function! SlimvFindPackage()
-    if !g:slimv_package || s:debug_activated
+    if !g:slimv_package || s:debug_activated || SlimvGetFiletype() == 'scheme'
         return
     endif
     if SlimvGetFiletype() == 'clojure'
@@ -1489,6 +1510,10 @@ function! SlimvConnectServer()
         if g:slimv_repl_open && ( repl_buf == -1 || ( g:slimv_repl_split && repl_win == -1 ) )
             call SlimvOpenReplBuffer()
         endif 
+        if s:swank_connected
+            python swank_disconnect()
+            let s:swank_connected = 0
+        endif 
         call SlimvConnectSwank()
     endif
     if !g:slimv_swank
@@ -1596,10 +1621,12 @@ endfunction
 " Evaluate top level form at the cursor pos
 function! SlimvEvalDefun()
     let oldpos = getpos( '.' ) 
-    call SlimvSelectDefun()
+    if !SlimvSelectDefun()
+        return
+    endif
     call SlimvFindPackage()
-    call SlimvEvalSelection()
     call setpos( '.', oldpos ) 
+    call SlimvEvalSelection()
 endfunction
 
 " Evaluate the whole buffer
@@ -1611,19 +1638,23 @@ endfunction
 " Evaluate current s-expression at the cursor pos
 function! SlimvEvalExp()
     let oldpos = getpos( '.' ) 
-    call SlimvSelectForm()
+    if !SlimvSelectForm()
+        return
+    endif
     call SlimvFindPackage()
-    call SlimvEvalSelection()
     call setpos( '.', oldpos ) 
+    call SlimvEvalSelection()
 endfunction
 
 " Evaluate and pretty print current s-expression
 function! SlimvPprintEvalExp()
     let oldpos = getpos( '.' ) 
-    call SlimvSelectForm()
+    if !SlimvSelectForm()
+        return
+    endif
     call SlimvFindPackage()
-    call SlimvEvalForm1( g:slimv_template_pprint, SlimvGetSelection() )
     call setpos( '.', oldpos ) 
+    call SlimvEvalForm1( g:slimv_template_pprint, SlimvGetSelection() )
 endfunction
 
 " Evaluate expression entered interactively
@@ -1654,7 +1685,9 @@ function! SlimvMacroexpandGeneral( command )
     let line = getline( "." )
     if match( line, '(\s*defmacro\s' ) < 0
         " The form does not contain 'defmacro', put it in a macroexpand block
-        call SlimvSelectForm()
+        if !SlimvSelectForm()
+            return
+        endif
         let m = "(" . a:command . " '" . SlimvGetSelection() . ")"
     else
         " The form is a 'defmacro', so do a macroexpand from the macro name and parameters
@@ -1685,7 +1718,9 @@ endfunction
 function! SlimvMacroexpand()
     if g:slimv_swank
         if s:swank_connected
-            call SlimvSelectDefun()
+            if !SlimvSelectForm()
+                return
+            endif
             let s:swank_form = SlimvGetSelection()
             call SlimvCommandUsePackage( 'python swank_macroexpand("s:swank_form")' )
         endif
@@ -1701,7 +1736,9 @@ endfunction
 function! SlimvMacroexpandAll()
     if g:slimv_swank
         if s:swank_connected
-            call SlimvSelectDefun()
+            if !SlimvSelectForm()
+                return
+            endif
             let s:swank_form = SlimvGetSelection()
             call SlimvCommandUsePackage( 'python swank_macroexpand_all("s:swank_form")' )
         else
@@ -1989,8 +2026,10 @@ endfunction
 " Compile the current top-level form
 function! SlimvCompileDefun()
     let oldpos = getpos( '.' ) 
-    call SlimvSelectDefun()
-    call SlimvFindPackage()
+    if !SlimvSelectDefun()
+        call setpos( '.', oldpos ) 
+        return
+    endif
     if g:slimv_swank
         if s:swank_connected
             let s:swank_form = SlimvGetSelection()
@@ -1999,11 +2038,12 @@ function! SlimvCompileDefun()
             call SlimvError( "Not connected to SWANK server." )
         endif
     else
+        call SlimvFindPackage()
         let form = SlimvGetSelection()
         let form = substitute( form, '"', '\\\\"', 'g' )
         call SlimvEvalForm1( g:slimv_template_compile_string, form )
+        call setpos( '.', oldpos ) 
     endif
-    call setpos( '.', oldpos ) 
 endfunction
 
 " Compile and load whole file
@@ -2062,7 +2102,6 @@ function! SlimvCompileRegion() range
     let oldpos = getpos( '.' ) 
     let lines = SlimvGetRegion()
     let region = join( lines, "\n" )
-    call SlimvFindPackage()
     if g:slimv_swank
         if s:swank_connected
             let s:swank_form = region
@@ -2071,10 +2110,11 @@ function! SlimvCompileRegion() range
             call SlimvError( "Not connected to SWANK server." )
         endif
     else
+        call SlimvFindPackage()
         let region = substitute( region, '"', '\\\\"', 'g' )
         call SlimvEvalForm1( g:slimv_template_compile_string, region )
+        call setpos( '.', oldpos ) 
     endif
-    call setpos( '.', oldpos ) 
 endfunction
 
 " ---------------------------------------------------------------------
