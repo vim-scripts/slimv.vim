@@ -1,7 +1,7 @@
-*paredit.txt*                    Slimv               Last Change: 01 May 2011
+*paredit.txt*                    Slimv               Last Change: 09 May 2011
 
 Paredit mode for Slimv                                *paredit* *slimv-paredit*
-                               Version 0.8.2
+                               Version 0.8.3
 
 The paredit.vim plugin performs structured editing of s-expressions used in
 the Lisp or Clojure programming language.
@@ -90,9 +90,9 @@ to switch it out by putting the following statement in the .vimrc file:
     let g:paredit_mode = 0
 
 You can enable paredit mode for other file types as well. Here is how to set
-it for Scheme files (meant to be added to your .vimrc file):
+it for Arc files (meant to be added to your .vimrc file):
 
-    au BufNewFile,BufRead *.scm call PareditInitBuffer()
+    au BufNewFile,BufRead *.arc call PareditInitBuffer()
 
 It is also possible to use the paredit mode alone, without the other parts of
 Slimv. The easiest way to do it is to delete all Slimv related files from the 
@@ -295,6 +295,7 @@ functions are mapped with the <Leader> prefix:
 ===============================================================================
 PAREDIT OPTIONS                                               *paredit-options*
 
+|g:paredit_leader|           Custom <Leader> setting for Paredit.
 |g:paredit_matchlines|       Number of lines to look backward and forward
                              when checking if the current form is balanced.
 
@@ -303,6 +304,16 @@ PAREDIT OPTIONS                                               *paredit-options*
 |g:paredit_shortmaps|        If nonzero, paredit is remapping some one-letter
                              Vim commands that are not frequently used.
 
+
+                                                             *g:paredit_leader*
+This option allows a custom <Leader> setting for the Paredit keybindings.
+By default it has the same value as |mapleader|. If neither g:paredit_leader
+nor mapleader are defined then the default <Leader> is "," in Paredit.
+Example:
+    let g:paredit_leader = '\'
+If this is set in the .vimrc then Wrap will be mapped to \W instead of ,W.
+
+There is a separate |g:slimv_leader| option for the general Slimv keybindings.
 
                                                          *g:paredit_matchlines*
 Number of lines to look backward and forward when checking if the current
@@ -315,9 +326,10 @@ balanced state of parens.
                                                           *g:paredit_shortmaps*
 If nonzero, paredit is remapping some one-letter normal mode Vim commands that
 are not frequently used. These are <, >, J, O, W, S. The original function of
-these maps then can be reached via the <Leader> prefix (which is the ","
-character by default in Slimv).
-Otherwise these paredit functions can be reached via the <Leader> prefix.
+these maps then can be reached via <Leader> (which is the "," character
+by default in Paredit).
+Otherwise these paredit functions can be reached via <Leader> maintaining the
+original functions of these keys.
 
 
 ===============================================================================

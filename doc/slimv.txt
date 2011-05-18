@@ -1,7 +1,7 @@
-*slimv.txt*                    Slimv                 Last Change: 01 May 2011
+*slimv.txt*                    Slimv                 Last Change: 17 May 2011
 
 Slimv                                                                  *slimv*
-                               Version 0.8.2
+                               Version 0.8.3
 
 The Superior Lisp Interaction Mode for Vim.
 This plugin is aimed to help Lisp development by interfacing between Vim and
@@ -80,6 +80,7 @@ To install the script:
        ftplugin/lisp/slimv-lisp.vim
        ftplugin/scheme/slimv-scheme.vim
        indent/clojure.vim
+       indent/lisp.vim
        plugin/paredit.vim
        slime/*
        swank-clojure/*
@@ -158,12 +159,17 @@ For the Swank options plese visit |swank-configuration|.
 
 |g:slimv_ctags|              OS command to generate tags file.
 
+|g:slimv_echolines|          Echo only this number of lines from the form
+                             being evaluated.
+
 |g:slimv_impl|               The Lisp implementation. Defaults to 'clisp'.
 
 |g:slimv_javadoc_root|       Base URL for the JavaDoc.
 
 |g:slimv_keybindings|        Predefined Slimv keybindings. Possible values:
                              1 = set #1, 2 = set #2, other = no keybindings
+
+|g:slimv_leader|             Custom <Leader> setting for Slimv.
 
 |g:slimv_lisp|               Path for the Lisp interpreter.
 
@@ -326,11 +332,24 @@ The default ctags command is:
   "ctags.exe -a --language-force=lisp *.lisp *.clj"
 
                                                           *g:slimv_keybindings*
-Defines the keybinding set used by Slimv. Value 0 means no keybinding at all.
+Defines the keybinding set used by Slimv.
+Value 0 means no keybinding at all.
 Value 1 defines the short keybinding with one-key bindings (after <Leader>).
+        Example: Eval-Defun is mapped to ,d
 Value 2 defines the easy keybinding with two-key bindings (after <Leader>).
+        Example: Eval-Defun is mapped to ,ed
 Other values mean no predefined keybinding is wanted.
-The <Leader> is set to ',' by default. 
+<Leader> is set to "," by default in Slimv.
+
+                                                               *g:slimv_leader*
+This option allows a custom <Leader> setting for the Slimv keybindings.
+By default it has the same value as |mapleader|. If neither g:slimv_leader nor
+mapleader are defined then the default <Leader> is "," in Slimv.
+Example:
+    let g:slimv_leader = '\'
+If this is set in the .vimrc then Eval-Defun will be mapped to \d instead of ,d.
+
+There is a separate |g:paredit_leader| option for the Paredit keybindings.
 
                                                                  *g:slimv_menu*
 If nonzero then the Slimv menu is added to the end of the global menu.
@@ -384,6 +403,15 @@ buffer then set this option to zero. This way the REPL buffer will be opened
 at the first evaluation, but any subsequent evaluation will be performed
 silently, with the REPL buffer kept hidden.
 
+It is also possible to define the desired split direction. The following
+values may be used for |g:slimv_repl_open|:
+
+    0: no split
+    1: horizontal split above (default)
+    2: horizontal split below
+    3: vertical split left
+    4: vertical split right
+
                                                            *g:slimv_updatetime*
 The REPL buffer is refreshed at every keystroke or when the user doesn't press
 a key for the time specified with 'updatetime'. Slimv alters the value for
@@ -418,6 +446,12 @@ This is the default behaviour as it is how regular REPL windows work. This
 mode also enables keybindings for cursor movements, so that an <Up> keypress
 will move the cursor one line on the display and not one line in the document.
 
+                                                            *g:slimv_echolines*
+If a long form is evaluated then echo only this number of lines from the
+beginning of the form. This option prevents filling the REPL buffer with
+mostly unnecessary information. Closing parens are added to the end even if
+the end of the form is not echoed, so paren balance is kept.
+If this option is set to zero then all lines are always echoed.
 
                                                             *g:slimv_clhs_root*
                                                           *g:slimv_cljapi_root*
@@ -574,7 +608,7 @@ Example:
 The default keybindings (|g:slimv_keybindings|=1) and another easy to remember
 built-in keybinding set (|g:slimv_keybindings|=2) for Slimv are the following.
 Please note that the leading ',' key below refers to <Leader>, which is set
-by Slimv to ',' by default.
+by Slimv to ',' by default (see |g:slimv_leader|).
 In the graphical menu the currently active keyboard shortcuts are displayed
 beside the menu item names, so one can refer to the GUI menu as a quick
 reference for the keymappings.
@@ -836,9 +870,12 @@ It is also possible to add user defined symbols to the Hyperspec database,
 see |g:slimv_clhs_user_db| and |g:slimv_cljapi_user_db|.
 
 
-Slimv uses the Hyperspec symbol database for symbol name completion, via
-Vim's omni-completion feature (if it is enabled and 'omnifunc' is not
-defined already to something else).
+The SWANK client requests simple or fuzzy completion from the SWANK server,
+see |swank-completions| for details.
+
+Without the SWANK client Slimv uses the Hyperspec symbol database for symbol
+name completion, via Vim's omni-completion feature (if it is enabled and
+'omnifunc' is not defined already to something else).
 Start to enter the symbol in Insert mode, then at some point press the
 <C-X><C-O> (omni-complete) key combination or select the 'Complete Symbol'
 function. The first match in the symbol database is inserted at the cursor
@@ -872,12 +909,14 @@ b. install a Clojure Vim syntax plugin, like VimClojure.
 The indentation is also done via the default lisp.vim indent plugin, or an
 optionally installed Clojure indent plugin, just like for the syntax
 highlighting.
+When using the SWANK client and it is connected to the server, then indentation
+information is fetched from the SWANK server. This allows special indentation
+methods, e.g. when the given macro has an &body argument then it is indented
+by 2 spaces (instead of indenting the second argument below the first one).
+
 There are some built-in Vim reindentation commands that may come very handy
 when editing Lisp files. One can define a custom key mapping for any of them,
 such mappings are not defined by Slimv.
-
-    :set autoindent         Copy indent from current line when starting
-                            a new line.
 
     =                       Reindent selection, after a text has been selected.
 
@@ -886,6 +925,8 @@ such mappings are not defined by Slimv.
     vab=   or    [(v%=      Select current list and reindent it.
 
     99[(v%=                 Select top level form and reindent it.
+
+    gg=G                    Reindent whole file.
 
 
 3. Parenthesis handling
@@ -1068,6 +1109,22 @@ FAQ                                                                 *slimv-faq*
 
 ===============================================================================
 CHANGE LOG                                                    *slimv-changelog*
+
+0.8.3  - Added top/bottom/left/right directions to g:slimv_repl_split.
+       - Added :Lisp (and an equivalent :Eval) command with completion.
+       - Added g:slimv_leader and g:paredit_leader options.
+       - Added g:slimv_echolines to echo only the first few lines of the
+         form being evaluated.
+       - Added fuzzy completion and option g:slimv_simple_compl (by Philipp Marek).
+       - Indent macros with &body argument by two spaces when connected to swank
+         (thanks to Philipp Marek and Andreas Fredriksson).
+       - Special indentation for flet, labels, macrolet.
+       - Default for Set-Package is current package (thanks to Philipp Marek).
+       - Bugfix: REPL output ordering problems.
+       - Bugfix: problem with inserting Space into visual block.
+       - Bugfix: blinking when g:slimv_repl_syntax is on.
+       - Bugfix: entering incomplete form in REPL command line.
+       - Bugfix: close form when inside comment, string, or with mixed ([.
 
 0.8.2  - Added Paredit and g:lisp_rainbow support for Scheme files.
        - Added SWANK support for MIT Scheme on Linux.
@@ -1351,8 +1408,8 @@ ideas, suggestions on the SWANK integration.
 
 Also thanks to Vlad Hanciuta, Marcin Fatyga, Dmitry Petukhov,
 Daniel Solano Gómez, Brian Kropf, Len Weincier, Andreas Salwasser,
-Jon Thacker, Andrew Hills, Jerome Baum, John Obbele for additional notes and
-contributions.
+Jon Thacker, Andrew Hills, Jerome Baum, John Obbele, Andreas Fredriksson
+for additional notes and contributions.
 
 Last but not least many thanks to my wife Andrea (for the Italians out there:
 hey, this is a female name in Hungary :) for her support and patience.

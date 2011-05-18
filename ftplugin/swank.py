@@ -4,8 +4,8 @@
 #
 # SWANK client for Slimv
 # swank.py:     SWANK client code for slimv.vim plugin
-# Version:      0.8.2
-# Last Change:  30 Apr 2011
+# Version:      0.8.3
+# Last Change:  17 May 2011
 # Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 # License:      This file is placed in the public domain.
 #               No warranty, express or implied.
@@ -35,6 +35,7 @@ read_string     = None          # Thread and tag in Swank read string mode
 prompt          = 'SLIMV'       # Command prompt
 package         = 'COMMON-LISP-USER' # Current package
 actions         = dict()        # Swank actions (like ':write-string'), by message id
+indent_info     = dict()        # Data of :indentation-update
 
 
 ###############################################################################
@@ -46,6 +47,9 @@ def logprint(text):
         f = open(logfile, "a")
         f.write(text + '\n')
         f.close()
+
+def logtime(text):
+    logprint(text + ' ' + str(time.clock()))
 
 ###############################################################################
 # Simple Lisp s-expression parser
@@ -197,7 +201,8 @@ def parse_plist(lst, keyword):
 def swank_send(text):
     global sock
 
-    logprint('[---Sent---]\n' + text)
+    logtime('[---Sent---]')
+    logprint(text)
     l = hex(len(text))[2:]
     t = '0'*(lenbytes-len(l)) + l + text
     if debug:
@@ -206,7 +211,7 @@ def swank_send(text):
         sock.send(t)
     except socket.error:
         sys.stdout.write( 'Socket error when sending to SWANK server.\n' )
-	swank_disconnect()
+        swank_disconnect()
 
 def swank_recv(msglen):
     global sock
@@ -214,7 +219,7 @@ def swank_recv(msglen):
     rec = ''
     if msglen > 0:
         sock.setblocking(0)
-        ready = select.select([sock], [], [], 0.1) # 0.1: timeout in seconds
+        ready = select.select([sock], [], [], 0.01) # 0.01: timeout in seconds
         if ready[0]:
             l = msglen
             sock.setblocking(1)
@@ -370,6 +375,7 @@ def swank_listen():
 
     retval = ''
     msgcount = 0
+    #logtime('[- Listen--]')
     while msgcount < maxmessages:
         rec = swank_recv(lenbytes)
         if rec == '':
@@ -382,7 +388,8 @@ def swank_listen():
             print 'Received length:', msglen
         if msglen > 0:
             rec = swank_recv(msglen)
-            logprint('[-Received-]\n' + rec)
+            logtime('[-Received-]')
+            logprint(rec)
             [s, r] = parse_sexpr( rec )
             if debug:
                 print 'Parsed:', r
@@ -418,6 +425,10 @@ def swank_listen():
                     # RERL requests entering a string
                     read_string = r[1:3]
 
+                elif message == ':indentation-update':
+                    for el in r[1]:
+                        indent_info[ unquote(el[0]) ] = el[2]
+
                 elif message == ':new-package':
                     package = unquote( r[1] )
                     prompt  = unquote( r[2] )
@@ -431,7 +442,7 @@ def swank_listen():
                     else:
                         action = None
                     if log:
-                        logprint('[Actionlist]')
+                        logtime('[Actionlist]')
                         for k,a in sorted(actions.items()):
                             if a.pending:
                                 pending = 'pending '
@@ -502,6 +513,10 @@ def swank_listen():
                                 if action.name == ':simple-completions':
                                     if type(params) == list and type(params[0]) == str and params[0] != 'nil':
                                         compl = "\n".join(params)
+                                        retval = retval + compl.replace('"', '')
+                                elif action.name == ':fuzzy-completions':
+                                    if type(params) == list and type(params[0]) == list:
+                                        compl = "\n".join(map(lambda x: x[0], params))
                                         retval = retval + compl.replace('"', '')
                                 elif action.name == ':xref':
                                     retval = retval + swank_parse_xref(r[1][1])
@@ -590,11 +605,19 @@ def get_package():
     else:
         return requote(pkg)
 
+def get_indent_info(name):
+    indent = ''
+    if name in indent_info:
+        indent = indent_info[name]
+    vc = ":let s:indent='" + indent + "'"
+    vim.command(vc)
+
 ###############################################################################
 # Various SWANK messages
 ###############################################################################
 
 def swank_connection_info():
+    indent_info.clear()
     swank_rex(':connection-info', '(swank:connection-info)', 'nil', 't')
 
 def swank_create_repl():
@@ -623,6 +646,10 @@ def swank_invoke_abort():
 
 def swank_invoke_continue():
     swank_rex(':sldb-continue', '(swank:sldb-continue)', 'nil', current_thread)
+
+def swank_require(contrib):
+    cmd = "(swank:swank-require '" + contrib + ')'
+    swank_rex(':swank-require', cmd, 'nil', ':repl-thread')
 
 def swank_frame_call(frame):
     cmd = '(swank-backend:frame-call ' + frame + ')'
@@ -655,6 +682,10 @@ def swank_op_arglist(op):
 def swank_completions(symbol):
     cmd = '(swank:simple-completions "' + symbol + '" "' + package + '")'
     swank_rex(':simple-completions', cmd, 'nil', 't')
+
+def swank_fuzzy_completions(symbol):
+    cmd = '(swank:fuzzy-completions "' + symbol + '" "' + package + '" :limit 200 :time-limit-in-msec 2000)' 
+    swank_rex(':fuzzy-completions', cmd, 'nil', 't')
 
 def swank_undefine_function(fn):
     cmd = '(swank:undefine-function "' + fn + '")'
@@ -825,6 +856,7 @@ def swank_output():
     return result
 
 def swank_response(name):
+    #logtime('[-Response-]')
     for k,a in sorted(actions.items()):
         if not a.pending and (name == '' or name == a.name):
             vc = ":let s:swank_action='" + a.name + "'"
