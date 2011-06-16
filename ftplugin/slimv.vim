@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.8.3
-" Last Change:  17 May 2011
+" Version:      0.8.4
+" Last Change:  09 Jun 2011
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -506,14 +506,14 @@ let s:skip_sc = 'synIDattr(synID(line("."), col("."), 0), "name") =~ "[Ss]tring\
 " =====================================================================
 
 " Display an error message
-function SlimvError( msg )
+function! SlimvError( msg )
     echohl ErrorMsg
     echo a:msg
     echohl None
 endfunction 
 
 " Display an error message and a question, return user response
-function SlimvErrorAsk( msg, question )
+function! SlimvErrorAsk( msg, question )
     echohl ErrorMsg
     let answer = input( a:msg . a:question )
     echo ""
@@ -522,9 +522,17 @@ function SlimvErrorAsk( msg, question )
 endfunction 
 
 " Display an error message and wait for ENTER
-function SlimvErrorWait( msg )
+function! SlimvErrorWait( msg )
     call SlimvErrorAsk( a:msg, " Press ENTER to continue." )
 endfunction 
+
+" Shorten long messages to fit status line
+function! SlimvShortEcho( msg )
+    let saved=&shortmess
+    set shortmess+=T
+    exe "normal :echomsg a:msg\n"
+    let &shortmess=saved
+endfunction
 
 " Position the cursor at the end of the REPL buffer
 " Optionally mark this position in Vim mark 's'
@@ -986,7 +994,7 @@ function! SlimvSelectForm()
 endfunction
 
 " Find starting '(' of a top level form
-function SlimvFindDefunStart()
+function! SlimvFindDefunStart()
     let l = line( '.' )
     let matchb = max( [l-100, 1] )
     while searchpair( '(', '', ')', 'bW', s:skip_sc, matchb )
@@ -1034,7 +1042,7 @@ endfunction
 " Find and add language specific package/namespace definition before the
 " cursor position and if exists then add it in front of the current selection
 function! SlimvFindPackage()
-    if !g:slimv_package || s:debug_activated || SlimvGetFiletype() == 'scheme'
+    if !g:slimv_package || SlimvGetFiletype() == 'scheme'
         return
     endif
     if SlimvGetFiletype() == 'clojure'
@@ -1109,8 +1117,7 @@ function! SlimvConnectSwank()
                 call SlimvSwankResponse()
             endwhile
             if s:swank_version >= '2008-12-23'
-                python swank_create_repl()
-                call SlimvSwankResponse()
+                call SlimvCommandGetResponse( ':create-repl', 'python swank_create_repl()' )
             endif
             let s:swank_connected = 1
             if g:slimv_simple_compl == 0
@@ -1304,7 +1311,9 @@ function! SlimvIndent( lnum )
         return 0
     endif
     " Use custom indentation only if default indenting is >2
+    set lisp
     let li = lispindent(a:lnum)
+    set nolisp
     if li > 2
         " Find start of current form
         let [l, c] = searchpairpos( '(', '', ')', 'nbW', s:skip_sc, pnum )
@@ -1552,6 +1561,22 @@ function! SlimvInterrupt()
     call SlimvRefreshReplBuffer()
 endfunction
 
+" Select a specific restart in debugger
+function! SlimvDebugCommand( cmd )
+    if g:slimv_swank
+        if s:swank_connected
+            if s:debug_activated
+                call SlimvCommand( 'python ' . a:cmd . '()' )
+                call SlimvRefreshReplBuffer()
+            else
+                call SlimvError( "Debugger is not activated." )
+            endif
+        else
+            call SlimvError( "Not connected to SWANK server." )
+        endif
+    endif
+endfunction
+
 " Display function argument list
 function! SlimvArglist()
     let l = line('.')
@@ -1563,6 +1588,8 @@ function! SlimvArglist()
         setlocal iskeyword+=~,#,&,\|,{,},[,],!,?
     endif
     if s:swank_connected && c > 1 && line[c-2] =~ '\k'
+        let save_ve = &virtualedit
+        set virtualedit=onemore
         " Display only if entering the first space after a keyword
         let matchb = max( [l-100, 1] )
         let [l0, c0] = searchpairpos( '(', '', ')', 'nbW', s:skip_sc, matchb )
@@ -1579,15 +1606,17 @@ function! SlimvArglist()
                     let s:save_showmode = &showmode
                     set noshowmode
                     let msg = substitute( msg, "\n", "", "g" )
+                    redraw
                     if match( msg, arg ) != 1
                         " Function name is not received from REPL
-                        echo "\r(" . arg . ' ' . msg[1:]
+                        call SlimvShortEcho( "(" . arg . ' ' . msg[1:] )
                     else
-                        echo "\r" . msg
+                        call SlimvShortEcho( msg )
                     endif
                 endif
             endif
         endif
+        let &virtualedit=save_ve
     endif
 
     " Return empty string because this function is called from an insert mode mapping
@@ -2497,16 +2526,19 @@ function! s:MenuMap( name, shortcut1, shortcut2, command )
     endif
 endfunction
 
-if g:slimv_swank
-    " Map space to display function argument list in status line
-    inoremap <silent> <Space>    <Space><C-R>=SlimvArglist()<CR>
-    "noremap  <silent> <C-C>      :call SlimvInterrupt()<CR>
-    au InsertLeave * :let &showmode=s:save_showmode
-endif
+" Initialize buffer by adding buffer specific mappings
+function! SlimvInitBuffer()
+    if g:slimv_swank
+        " Map space to display function argument list in status line
+        inoremap <silent> <buffer> <Space>    <Space><C-R>=SlimvArglist()<CR>
+        "noremap  <silent> <buffer> <C-C>      :call SlimvInterrupt()<CR>
+        au InsertLeave * :let &showmode=s:save_showmode
+    endif
+    inoremap <silent> <buffer> <C-X>0     <C-O>:call SlimvCloseForm()<CR>
+    inoremap <silent> <buffer> <Tab>      <C-R>=pumvisible() ? "\<lt>C-N>" : "\<lt>C-X>\<lt>C-O>"<CR>
+endfunction
 
 " Edit commands
-inoremap <silent> <C-X>0     <C-O>:call SlimvCloseForm()<CR>
-inoremap <silent> <Tab>      <C-R>=pumvisible() ? "\<lt>C-N>" : "\<lt>C-X>\<lt>C-O>"<CR>
 call s:MenuMap( 'Slim&v.Edi&t.Close-&Form',                     g:slimv_leader.')',  g:slimv_leader.'tc',  ':<C-U>call SlimvCloseForm()<CR>' )
 call s:MenuMap( 'Slim&v.Edi&t.&Complete-Symbol<Tab>Tab',        '',                  '',                   '<Ins><C-X><C-O>' )
 call s:MenuMap( 'Slim&v.Edi&t.&Paredit-Toggle',                 g:slimv_leader.'(',  g:slimv_leader.'(t',  ':<C-U>call PareditToggle()<CR>' )
@@ -2536,6 +2568,9 @@ endif
 
 call s:MenuMap( 'Slim&v.De&bugging.Disassemb&le\.\.\.',         g:slimv_leader.'l',  g:slimv_leader.'dd',  ':call SlimvDisassemble()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Inspect\.\.\.',             g:slimv_leader.'i',  g:slimv_leader.'di',  ':call SlimvInspect()<CR>' )
+call s:MenuMap( 'Slim&v.De&bugging.&Abort',                     g:slimv_leader.'a',  g:slimv_leader.'da',  ':call SlimvDebugCommand("swank_invoke_abort")<CR>' )
+call s:MenuMap( 'Slim&v.De&bugging.&Quit-to-Toplevel',          g:slimv_leader.'q',  g:slimv_leader.'dq',  ':call SlimvDebugCommand("swank_throw_toplevel")<CR>' )
+call s:MenuMap( 'Slim&v.De&bugging.&Continue',                  g:slimv_leader.'n',  g:slimv_leader.'dc',  ':call SlimvDebugCommand("swank_invoke_continue")<CR>' )
 
 " Compile commands
 call s:MenuMap( 'Slim&v.&Compilation.Compile-&Defun',           g:slimv_leader.'D',  g:slimv_leader.'cd',  ':<C-U>call SlimvCompileDefun()<CR>' )
@@ -2570,7 +2605,7 @@ call s:MenuMap( 'Slim&v.&Profiling.Profile-&Reset',             g:slimv_leader.'
 
 " Documentation commands
 call s:MenuMap( 'Slim&v.&Documentation.Describe-&Symbol',       g:slimv_leader.'s',  g:slimv_leader.'ds',  ':call SlimvDescribeSymbol()<CR>' )
-call s:MenuMap( 'Slim&v.&Documentation.&Apropos',               g:slimv_leader.'a',  g:slimv_leader.'da',  ':call SlimvApropos()<CR>' )
+call s:MenuMap( 'Slim&v.&Documentation.&Apropos',               g:slimv_leader.'A',  g:slimv_leader.'dp',  ':call SlimvApropos()<CR>' )
 call s:MenuMap( 'Slim&v.&Documentation.&Hyperspec',             g:slimv_leader.'h',  g:slimv_leader.'dh',  ':call SlimvHyperspec()<CR>' )
 call s:MenuMap( 'Slim&v.&Documentation.Generate-&Tags',         g:slimv_leader.']',  g:slimv_leader.'dg',  ':call SlimvGenerateTags()<CR>' )
 
@@ -2597,7 +2632,7 @@ if g:slimv_menu == 1
 endif
 
 " Add REPL menu. This menu exist only for the REPL buffer.
-function SlimvAddReplMenu()
+function! SlimvAddReplMenu()
     if &wildcharm != 0
         execute ':map ' . g:slimv_leader.'\ :emenu REPL.' . nr2char( &wildcharm )
     endif
