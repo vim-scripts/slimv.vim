@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.8.4
-" Last Change:  09 Jun 2011
+" Version:      0.8.5
+" Last Change:  02 Aug 2011
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -17,11 +17,14 @@ let g:slimv_loaded = 1
 
 let g:slimv_windows = 0
 let g:slimv_cygwin  = 0
+let g:slimv_osx     = 0
 
 if has( 'win32' ) || has( 'win95' ) || has( 'win64' ) || has( 'win16' )
     let g:slimv_windows = 1
 elseif has( 'win32unix' )
     let g:slimv_cygwin = 1
+elseif has( 'macunix' )
+    let g:slimv_osx = 1
 endif
 
 
@@ -163,7 +166,7 @@ function! SlimvSwankCommand()
                 return ''
             endif
             let sclj = substitute( swanks[0], '\', '/', "g" )
-            let cmd = g:slimv_lisp . ' -e "(load-file \"' . sclj . '\") (swank.swank/start-repl)" -r'
+            let cmd = g:slimv_lisp . ' -i "' . sclj . '" -e "(swank.swank/start-repl)" -r'
         endif
     elseif SlimvGetFiletype() == 'scheme'
         let swanks = split( globpath( &runtimepath, 'slime/contrib/swank-mit-scheme.scm'), '\n' )
@@ -204,6 +207,8 @@ function! SlimvSwankCommand()
     if cmd != ''
         if g:slimv_windows || g:slimv_cygwin
             return '!start /MIN ' . cmd
+        elseif g:slimv_osx
+            return '!osascript -e "tell application \"Terminal\" to do script \"' . cmd . '\""'
         else
             return '! xterm -iconic -e ' . cmd . ' &'
         endif
@@ -567,7 +572,7 @@ function! SlimvSwankResponse()
             echo input('Press ENTER to continue.')
         endif
     endif
-    if s:swank_actions_pending == ''
+    if s:swank_actions_pending == 0
         " All SWANK output handled
         let &updatetime = s:save_updatetime
     endif
@@ -617,9 +622,15 @@ function! SlimvCommand( cmd )
         let &updatetime = g:slimv_updatetime
     endif
 
-    let lines = split( msg, '\n' )
+    let lines = split( msg, '\n', 1 )
+    if lines[0] == ''
+        " For some reason Python output redirection sometimes adds a newline at the beginning
+        let lines = lines[1:]
+    endif
     set noreadonly
-    call append( '$', lines )
+    let lastline = getline( '$' ) . lines[0]
+    call setline( '$', lastline )
+    call append( '$', lines[1:] )
     set readonly
     set nomodified
     let s:last_update = localtime()
@@ -662,7 +673,7 @@ function! SlimvCommandGetResponse( name, cmd )
     let starttime = localtime()
     let cmd_timeout = 3
     while s:swank_action == '' && localtime()-starttime < cmd_timeout
-        python swank_listen()
+        python swank_output()
         redir => msg
         silent execute 'python swank_response("' . a:name . '")'
         redir END
@@ -1092,6 +1103,7 @@ function! SlimvConnectSwank()
 
     if !s:swank_connected
         let s:swank_version = ''
+        let s:lisp_version = ''
         python swank_connect( "g:swank_port", "result" )
         if result != ''
             " SWANK server is not running, start server if possible
@@ -1126,6 +1138,10 @@ function! SlimvConnectSwank()
             endif
             redraw
             echon "\rConnected to SWANK server on port " . g:swank_port . "."
+	    if exists( "*b:SlimvReplInit" )
+		" Perform implementation specific REPL initialization if supplied
+                call b:SlimvReplInit( s:lisp_version )
+            endif
         else
             " Display connection error message
             let answer = SlimvErrorAsk( result, " Switch off SWANK client [Y/n]?" )
@@ -1164,20 +1180,30 @@ function! SlimvSend( args, open_buffer, echoing )
     if g:slimv_swank
         let s:refresh_disabled = 1
         let s:swank_form = text
-        if a:echoing
+        if a:echoing && g:slimv_echolines != 0
             if g:slimv_echolines > 0
                 let nlpos = match( s:swank_form, "\n", 0, g:slimv_echolines )
                 if nlpos > 0
                     " Echo only the first g:slimv_echolines number of lines
-                    let s:swank_form = strpart( s:swank_form, 0, nlpos ) . " ..."
-                    let end = s:CloseForm( [s:swank_form] )
-                    if end != 'ERROR'
-                        let s:swank_form = s:swank_form . end
+                    let trimmed = strpart( s:swank_form, nlpos )
+                    let s:swank_form = strpart( s:swank_form, 0, nlpos )
+                    let ending = s:CloseForm( [s:swank_form] )
+                    if ending != 'ERROR'
+                        if substitute( trimmed, '\s\|\n', '', 'g' ) == ''
+                            " Only whitespaces are trimmed
+                            let s:swank_form = s:swank_form . ending . "\n"
+                        else
+                            " Valuable characters trimmed, indicate it by printing "..."
+                            let s:swank_form = s:swank_form . " ..." . ending . "\n"
+                        endif
                     endif
                 endif
             endif
-            call SlimvCommand( 'echo s:swank_form' )
+            call SlimvCommand( 'echo "\n" . s:swank_form' )
             let s:swank_form = text
+        else
+            " Open a new line for the output
+            call SlimvCommand( 'echo "\n"' )
         endif
         call SlimvCommand( 'python swank_input("s:swank_form")' )
         let s:swank_package = ''
@@ -1310,35 +1336,41 @@ function! SlimvIndent( lnum )
         " Hit the start of the file, use zero indent.
         return 0
     endif
-    " Use custom indentation only if default indenting is >2
-    set lisp
-    let li = lispindent(a:lnum)
-    set nolisp
-    if li > 2
-        " Find start of current form
-        let [l, c] = searchpairpos( '(', '', ')', 'nbW', s:skip_sc, pnum )
-        " Use custom indentation only if default indenting is >2 from the opening paren in the previous line
-        if l == pnum && li > c + 1
-            let line = getline( l )
-            let parent = strpart( line, 0, c )
-            if match( parent, '\c(\s*\(flet\|labels\|macrolet\)\s*(\s*(\s*$' ) >= 0
-                " Handle special indentation style for flet, labels, etc.
+    " Find start of current form
+    let [l, c] = searchpairpos( '(', '', ')', 'nbW', s:skip_sc, pnum )
+    if l == pnum
+        let line = getline( l )
+        let parent = strpart( line, 0, c )
+        if match( parent, '\c(\s*\(flet\|labels\|macrolet\)\s*(\s*(\s*$' ) >= 0
+            " Handle special indentation style for flet, labels, etc.
+            return c + 1
+        endif
+        " Found opening paren in the previous line, let's find out the function name
+        let func = matchstr( line, '\<\k*\>', c )
+        " If it's a keyword, keep the indentation straight
+        if strpart(func, 0, 1) == ':'
+            return c
+        endif
+        if SlimvGetFiletype() == 'clojure' && match( func, 'defn$' ) >= 0
+            " Fix clojure specific indentation issues not handled by the default lisp.vim
+            return c + 1
+        endif
+        " Remove package specification
+        let func = substitute(func, '^.*:', '', '')
+        if func != '' && g:slimv_swank && s:swank_connected
+            let s:indent = ''
+            silent execute 'python get_indent_info("' . func . '")'
+            if s:indent >= '0' && s:indent <= '9'
+                " Function has &body argument, so indent by 2 spaces from the opening '('
                 return c + 1
-            endif
-            " Found opening paren in the previous line, let's find out the function name
-            let func = matchstr( line, '\<\k*\>', c )
-            if func != '' && g:slimv_swank && s:swank_connected
-                let s:indent = ''
-                silent execute 'python get_indent_info("' . func . '")'
-                if s:indent >= '0' && s:indent <= '9'
-                    " Function has &body argument, so indent by 2 spaces from the opening '('
-                    return c + 1
-                endif
             endif
         endif
     endif
 
     " Use default Lisp indening
+    set lisp
+    let li = lispindent(a:lnum)
+    set nolisp
     return li
 endfunction 
 
@@ -1577,6 +1609,52 @@ function! SlimvDebugCommand( cmd )
     endif
 endfunction
 
+" List current Lisp threads
+function! SlimvListThreads()
+    if g:slimv_swank
+        if s:swank_connected
+            call SlimvCommand( 'python swank_list_threads()' )
+            call SlimvRefreshReplBuffer()
+        else
+            call SlimvError( "Not connected to SWANK server." )
+        endif
+    endif
+endfunction
+
+" Kill thread selected from the Thread List
+function! SlimvKillThread()
+    if g:slimv_swank
+        if s:swank_connected
+            let line = getline('.')
+            let item = matchstr( line, '\d\+' )
+            let item = input( 'Thread to kill: ', item )
+            if item != ''
+                call SlimvCommand( 'python swank_debug_thread(' . item . ')' )
+                call SlimvRefreshReplBuffer()
+            endif
+        else
+            call SlimvError( "Not connected to SWANK server." )
+        endif
+    endif
+endfunction
+
+" Debug thread selected from the Thread List
+function! SlimvDebugThread()
+    if g:slimv_swank
+        if s:swank_connected
+            let line = getline('.')
+            let item = matchstr( line, '\d\+' )
+            let item = input( 'Thread to debug: ', item )
+            if item != ''
+                call SlimvCommand( 'python swank_debug_thread(' . item . ')' )
+                call SlimvRefreshReplBuffer()
+            endif
+        else
+            call SlimvError( "Not connected to SWANK server." )
+        endif
+    endif
+endfunction
+
 " Display function argument list
 function! SlimvArglist()
     let l = line('.')
@@ -1757,6 +1835,25 @@ function! SlimvEvalBuffer()
     call SlimvEval( lines )
 endfunction
 
+" Return frame number if we are in the Backtrace section of the debugger
+function! s:DebugFrame()
+    if g:slimv_swank && s:swank_connected && s:debug_activated
+        " Check if we are in SLDB
+        let repl_buf = bufnr( g:slimv_repl_file )
+        if repl_buf != -1 && repl_buf == bufnr( "%" )
+            let line = getline('.')
+            let item = matchstr( line, '\d\+' )
+            if item != ''
+                let section = getline( line('.') - item - 1 )
+                if section[0:9] == 'Backtrace:'
+                    return item
+                endif
+            endif
+        endif
+    endif
+    return ''
+endfunction
+
 " Evaluate current s-expression at the cursor pos
 function! SlimvEvalExp()
     let oldpos = getpos( '.' ) 
@@ -1781,9 +1878,22 @@ endfunction
 
 " Evaluate expression entered interactively
 function! SlimvInteractiveEval()
-    let e = input( 'Eval: ' )
-    if e != ''
-        call SlimvEval([e])
+    let frame = s:DebugFrame()
+    if frame != ''
+        " We are in the debugger, eval expression in the frame the cursor stands on
+        let e = input( 'Eval in frame: ' )
+        if e != ''
+            let result = SlimvCommandGetResponse( ':eval-string-in-frame', 'python swank_eval_in_frame("' . e . '", ' . frame . ')' )
+            if result != ''
+                redraw
+                echo result
+            endif
+        endif
+    else
+        let e = input( 'Eval: ' )
+        if e != ''
+            call SlimvEval([e])
+        endif
     endif
 endfunction
 
@@ -1932,16 +2042,25 @@ endfunction
 
 " Inspect symbol under cursor
 function! SlimvInspect()
-    let s = input( 'Inspect: ', SlimvSelectSymbolExt() )
-    if s != ''
-        if g:slimv_swank
-            if s:swank_connected
-                call SlimvCommandUsePackage( 'python swank_inspect("' . s . '")' )
+    let frame = s:DebugFrame()
+    if frame != ''
+        " Inspect selected for a frame in the debugger's Backtrace section
+        let s = input( 'Inspect in frame ' . frame . ': ' )
+        call SlimvCommand( 'python swank_inspect_in_frame("' . s . '", ' . frame . ')' )
+        call SlimvRefreshReplBuffer()
+        return
+    else
+        let s = input( 'Inspect: ', SlimvSelectSymbolExt() )
+        if s != ''
+            if g:slimv_swank
+                if s:swank_connected
+                    call SlimvCommandUsePackage( 'python swank_inspect("' . s . '")' )
+                else
+                    call SlimvError( "Not connected to SWANK server." )
+                endif
             else
-                call SlimvError( "Not connected to SWANK server." )
+                call SlimvEvalForm1( g:slimv_template_inspect, s )
             endif
-        else
-            call SlimvEvalForm1( g:slimv_template_inspect, s )
         endif
     endif
 endfunction
@@ -2409,6 +2528,9 @@ endfunction
 " Complete symbol name starting with 'base'
 function! SlimvComplete( base )
     " Find all symbols starting with "a:base"
+    if a:base == ''
+        return []
+    endif
     if g:slimv_swank && s:swank_connected
         if g:slimv_simple_compl
             let msg = SlimvCommandGetResponse( ':simple-completions', 'python swank_completions("' . a:base . '")' )
@@ -2571,6 +2693,12 @@ call s:MenuMap( 'Slim&v.De&bugging.&Inspect\.\.\.',             g:slimv_leader.'
 call s:MenuMap( 'Slim&v.De&bugging.&Abort',                     g:slimv_leader.'a',  g:slimv_leader.'da',  ':call SlimvDebugCommand("swank_invoke_abort")<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Quit-to-Toplevel',          g:slimv_leader.'q',  g:slimv_leader.'dq',  ':call SlimvDebugCommand("swank_throw_toplevel")<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Continue',                  g:slimv_leader.'n',  g:slimv_leader.'dc',  ':call SlimvDebugCommand("swank_invoke_continue")<CR>' )
+if g:slimv_swank
+call s:MenuMap( 'Slim&v.De&bugging.&List-Threads',              g:slimv_leader.'H',  g:slimv_leader.'dl',  ':call SlimvListThreads()<CR>' )
+call s:MenuMap( 'Slim&v.De&bugging.&Kill-Thread\.\.\.',         g:slimv_leader.'K',  g:slimv_leader.'dk',  ':call SlimvKillThread()<CR>' )
+call s:MenuMap( 'Slim&v.De&bugging.&Debug-Thread\.\.\.',        g:slimv_leader.'G',  g:slimv_leader.'dg',  ':call SlimvDebugThread()<CR>' )
+endif
+
 
 " Compile commands
 call s:MenuMap( 'Slim&v.&Compilation.Compile-&Defun',           g:slimv_leader.'D',  g:slimv_leader.'cd',  ':<C-U>call SlimvCompileDefun()<CR>' )

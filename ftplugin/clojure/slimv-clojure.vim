@@ -1,7 +1,7 @@
 " slimv-clojure.vim:
 "               Clojure filetype plugin for Slimv
-" Version:      0.8.4
-" Last Change:  28 May 2011
+" Version:      0.8.5
+" Last Change:  13 Jul 2011
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -146,6 +146,20 @@ function! b:SlimvHyperspecLookup( word, exact, all )
         let symbol = SlimvFindSymbol( a:word, a:exact, a:all, g:slimv_cljapi_user_db, user_root, symbol )
     endif
     return symbol
+endfunction
+
+" Implementation specific REPL initialization
+function! b:SlimvReplInit( lisp_version )
+    " Import functions commonly used in REPL but not present when not running in repl mode
+    if a:lisp_version[0:2] >= '1.3'
+        call SlimvSend( ["(use '[clojure.repl :only (source apropos dir pst doc find-doc)])",
+        \                "(use '[clojure.java.javadoc :only (javadoc)])",
+        \                "(use '[clojure.pprint :only (pp pprint)])"], 0, 0 )
+    elseif a:lisp_version[0:2] >= '1.2'
+        call SlimvSend( ["(use '[clojure.repl :only (source apropos)])",
+        \                "(use '[clojure.java.javadoc :only (javadoc)])",
+        \                "(use '[clojure.pprint :only (pp pprint)])"], 0, 0 )
+    endif
 endfunction
 
 " Source Slimv general part

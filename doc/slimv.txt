@@ -1,7 +1,7 @@
-*slimv.txt*                    Slimv                 Last Change: 16 Jun 2011
+*slimv.txt*                    Slimv                 Last Change: 19 Jul 2011
 
 Slimv                                                                  *slimv*
-                               Version 0.8.4
+                               Version 0.8.5
 
 The Superior Lisp Interaction Mode for Vim.
 This plugin is aimed to help Lisp development by interfacing between Vim and
@@ -451,7 +451,8 @@ If a long form is evaluated then echo only this number of lines from the
 beginning of the form. This option prevents filling the REPL buffer with
 mostly unnecessary information. Closing parens are added to the end even if
 the end of the form is not echoed, so paren balance is kept.
-If this option is set to zero then all lines are always echoed.
+If this option is set to zero then no line is echoed at all, if set to -1
+then all lines are always echoed.
 
                                                             *g:slimv_clhs_root*
                                                           *g:slimv_cljapi_root*
@@ -635,7 +636,7 @@ sequence, then you may want to fine tune these Vim options:
     ,e      ,ee      Eval Current Expression (current subform)
     ,r      ,er      Eval Region (visual selection)
     ,b      ,eb      Eval Buffer
-    ,v      ,ei      Interactive Eval
+    ,v      ,ei      Interactive Eval (evaluates in frame when in SLDB)
     ,u      ,eu      Undefine Function
 
     Debug commands:
@@ -644,10 +645,13 @@ sequence, then you may want to fine tune these Vim options:
     ,t      ,dt      Toggle Trace
     ,T      ,du      Untrace All
     ,l      ,dd      Disassemble
-    ,i      ,di      Inspect
+    ,i      ,di      Inspect (inspects in frame when in SLDB)
     ,a      ,da      Abort (only when using SWANK client)
     ,q      ,dq      Quit to Toplevel (only when using SWANK client)
     ,n      ,dc      Continue (only when using SWANK client)
+    ,H      ,dl      List Threads
+    ,K      ,dk      Kill Thread
+    ,G      ,dg      Debug Thread
 
     Compile commands:
     ,D      ,cd      Compile Defun
@@ -1125,6 +1129,27 @@ FAQ                                                                 *slimv-faq*
 ===============================================================================
 CHANGE LOG                                                    *slimv-changelog*
 
+0.8.5  - Switch on indent plugins.
+       - Do not complete empty string on <Tab>.
+       - Added Clojure keywords to syntax plugin.
+       - Use -i option to load swank-clojure.
+       - Implementation specific REPL initialization, for Clojure it imports
+         source, apropos, javadoc, etc. (thanks to Ömer Sinan Agacan).
+       - Print Lisp version at REPL startup.
+       - Added List-Threads, Kill-Thread, Debug-Thread (thanks to Philipp Marek).
+       - Write prompt after Toggle-Trace.
+       - Display list of untraced functions for Untrace-All.
+       - When in SLDB, Interactive-Eval evaluates expressions in the frame,
+         Inspect inspects objects in the frame.
+       - Changed g:slimv_echolines logic: set 0 for no lines, -1 for all lines.
+       - Bugfix: removed extra linebreak between chunks of long output.
+       - Bugfix: indentation problems for symbols with package specification
+         (thanks to Philipp Marek).
+       - Bugfix: indentation of Clojure's defn.
+       - Bugfix: plist indentation (thanks to Philipp Marek).
+       - Bugfix: occasional few seconds delay in swank response.
+       - Bugfix: running Swank server on Mac OS X (on behalf of Tobias Pflug).
+
 0.8.4  - Added handling for Unicode characters.
        - Truncate arglist output to fit in the status line.
        - Added debugger keybindings: ,a for abort ,q for quit ,n for continue.
@@ -1434,8 +1459,8 @@ ideas, suggestions on the SWANK integration.
 
 Also thanks to Vlad Hanciuta, Marcin Fatyga, Dmitry Petukhov,
 Daniel Solano Gómez, Brian Kropf, Len Weincier, Andreas Salwasser,
-Jon Thacker, Andrew Hills, Jerome Baum, John Obbele, Andreas Fredriksson
-for additional notes and contributions.
+Jon Thacker, Andrew Hills, Jerome Baum, John Obbele, Andreas Fredriksson,
+Ömer Sinan Agacan, Tobias Pflug for additional notes and contributions.
 
 Last but not least many thanks to my wife Andrea (for the Italians out there:
 hey, this is a female name in Hungary :) for her support and patience.
