@@ -4,8 +4,8 @@
 #
 # SWANK client for Slimv
 # swank.py:     SWANK client code for slimv.vim plugin
-# Version:      0.8.5
-# Last Change:  02 Aug 2011
+# Version:      0.8.6
+# Last Change:  22 Aug 2011
 # Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 # License:      This file is placed in the public domain.
 #               No warranty, express or implied.
@@ -144,10 +144,11 @@ def parse_sub_sexpr( sexpr, opening, closing ):
                 # Skip coment
                 pos = pos + parse_comment( sexpr[pos:] ) - 1
             elif not sexpr[pos] in string.whitespace + '\\':
-                # Parse keyword
+                # Parse keyword but ignore dot in dotted notation (a . b)
                 klen = parse_keyword( sexpr[pos:] )
-                result = result + [sexpr[pos:pos+klen]]
-                pos = pos + klen - 1
+                if klen > 1 or sexpr[pos] != '.':
+                    result = result + [sexpr[pos:pos+klen]]
+                    pos = pos + klen - 1
         pos = pos + 1
 
     if quote_cnt != 0:
@@ -337,7 +338,12 @@ def swank_parse_compile(struct):
     buf = ''
     warnings = struct[1]
     time = struct[3]
-    filename = struct[5]
+    filename = ''
+    if len(struct) > 5:
+        filename = struct[5]
+    if filename == '' or filename[0] != '"':
+        filename = '"' + filename + '"'
+    vim.command('let s:compiled_file=' + filename + '')
     vim.command("let qflist = []")
     if type(warnings) == list:
         buf = '\n' + str(len(warnings)) + ' compiler notes:\n\n'
@@ -359,7 +365,11 @@ def swank_parse_compile(struct):
                     buf = buf + snippet + '\n'
                 buf = buf + fname + ':' + pos + '\n'
                 buf = buf + '  ' + severity + ': ' + msg + '\n\n' 
-                [lnum, cnum] = parse_location(fname, int(pos))
+                if location[2][0] == ':line':
+                    lnum = pos
+                    cnum = 1
+                else:
+                    [lnum, cnum] = parse_location(fname, int(pos))
                 qfentry = "{'filename':'"+fname+"','lnum':'"+str(lnum)+"','col':'"+str(cnum)+"','text':'"+msg+"'}"
                 logprint(qfentry)
                 vim.command("call add(qflist, " + qfentry + ")")
@@ -478,7 +488,7 @@ def swank_listen():
 
                 elif message == ':indentation-update':
                     for el in r[1]:
-                        indent_info[ unquote(el[0]) ] = el[2]
+                        indent_info[ unquote(el[0]) ] = el[1]
 
                 elif message == ':new-package':
                     package = unquote( r[1] )
@@ -557,10 +567,6 @@ def swank_listen():
                             elif element == ':title':
                                 retval = retval + new_line(retval) + swank_parse_inspect(params)
                             elif element == ':compilation-result':
-                                filename = params[5]
-                                if filename[0] != '"':
-                                    filename = '"' + filename + '"'
-                                vim.command('let s:compiled_file=' + filename + '')
                                 retval = retval + new_line(retval) + swank_parse_compile(params) + prompt + '> '
                             else:
                                 if action.name == ':simple-completions':
@@ -869,7 +875,7 @@ def swank_debug_thread(index):
 # Generic SWANK connection handling
 ###############################################################################
 
-def swank_connect(portvar, resultvar):
+def swank_connect(host, port, resultvar):
     """
     Create socket to swank server and request connection info
     """
@@ -878,8 +884,8 @@ def swank_connect(portvar, resultvar):
 
     if not sock:
         try:
-            input_port = int(vim.eval(portvar))
-            swank_server = ('localhost', input_port)
+            input_port = port
+            swank_server = (host, input_port)
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.connect(swank_server)
             swank_connection_info()
@@ -890,7 +896,6 @@ def swank_connect(portvar, resultvar):
             sock = None
             return sock
     vim.command('let ' + resultvar + '=""')
-    return sock
 
 def swank_disconnect():
     """
@@ -912,7 +917,7 @@ def swank_input(formvar):
     form = vim.eval(formvar)
     if read_string:
         # We are in :read-string mode, pass string entered to REPL
-        swank_return_string('"' + form + '\n"')
+        swank_return_string('"' + form + '"')
     elif debug_activated and form[0] != '(' and form[0] != ' ':
         # We are in debug mode and an SLDB command follows (that is not an s-expr)
         if form[0] == '#':
