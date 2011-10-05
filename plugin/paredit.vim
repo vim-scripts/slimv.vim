@@ -1,7 +1,7 @@
 " paredit.vim:
 "               Paredit mode for Slimv
-" Version:      0.8.6
-" Last Change:  20 Aug 2011
+" Version:      0.9.0
+" Last Change:  26 Sep 2011
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -74,7 +74,7 @@ function! PareditInitBuffer()
     " in case they are accidentally removed
     " Also define regular expressions to identify special characters used by paredit
     if &ft == 'clojure'
-        setlocal iskeyword+=~,#,&,\|,!,?
+        setlocal iskeyword+=+,-,*,/,%,<,=,>,:,$,?,!,@-@,94,~,#,\|,&
         let b:any_matched_char   = '(\|)\|\[\|\]\|{\|}\|\"'
         let b:any_matched_pair   = '()\|\[\]\|{}\|\"\"'
         let b:any_opening_char   = '(\|\[\|{'
@@ -83,7 +83,7 @@ function! PareditInitBuffer()
         let b:any_wsopen_char    = '\s\|(\|\[\|{'
         let b:any_wsclose_char   = '\s\|)\|\]\|}'
     else
-        setlocal iskeyword+=~,#,&,\|,{,},[,],!,?
+        setlocal iskeyword+=+,-,*,/,%,<,=,>,:,$,?,!,@-@,94,~,#,\|,&,{,},[,]
         let b:any_matched_char   = '(\|)\|\"'
         let b:any_matched_pair   = '()\|\"\"'
         let b:any_opening_char   = '('
@@ -104,6 +104,8 @@ function! PareditInitBuffer()
         nnoremap <buffer> <silent> )            :<C-U>call PareditFindClosing('(',')',0)<CR>
         vnoremap <buffer> <silent> (            <Esc>:<C-U>call PareditFindOpening('(',')',1)<CR>
         vnoremap <buffer> <silent> )            <Esc>:<C-U>call PareditFindClosing('(',')',1)<CR>
+        nnoremap <buffer> <silent> [[           :<C-U>call PareditFindDefunBck()<CR>
+        nnoremap <buffer> <silent> ]]           :<C-U>call PareditFindDefunFwd()<CR>
         nnoremap <buffer> <silent> x            :<C-U>call PareditEraseFwd()<CR>
         nnoremap <buffer> <silent> <Del>        :<C-U>call PareditEraseFwd()<CR>
         nnoremap <buffer> <silent> X            :<C-U>call PareditEraseBck()<CR>
@@ -171,6 +173,8 @@ function! PareditInitBuffer()
         silent! iunmap <buffer> <Del>
         silent! unmap  <buffer> (
         silent! unmap  <buffer> )
+        silent! unmap  <buffer> [[
+        silent! unmap  <buffer> ]]
         silent! unmap  <buffer> x
         silent! unmap  <buffer> <Del>
         silent! unmap  <buffer> X
@@ -495,6 +499,49 @@ function! PareditFindClosing( open, close, select )
         normal! l
     else
         call searchpair( open, '', close, 'W', s:skip_sc )
+    endif
+endfunction
+
+" Find defun start backwards
+function! PareditFindDefunBck()
+    let l = line( '.' )
+    let matchb = max( [l-g:paredit_matchlines, 1] )
+    let oldpos = getpos( '.' ) 
+    let newpos = searchpairpos( '(', '', ')', 'brW', s:skip_sc, matchb )
+    if newpos[0] == 0
+        " Already standing on a defun, find the end of the previous one
+        let newpos = searchpos( ')', 'bW' )
+        while newpos[0] != 0 && (s:InsideComment() || s:InsideString())
+            let newpos = searchpos( ')', 'W' )
+        endwhile
+        if newpos[0] == 0
+            " No ')' found, don't move cursor
+            call setpos( '.', oldpos )
+        else
+            " Find opening paren
+            let pairpos = searchpairpos( '(', '', ')', 'brW', s:skip_sc, matchb )
+            if pairpos[0] == 0
+                " ')' has no matching pair
+                call setpos( '.', oldpos )
+            endif
+        endif
+    endif
+endfunction
+
+" Find defun start forward
+function! PareditFindDefunFwd()
+    let l = line( '.' )
+    let matchf = min( [l+g:paredit_matchlines, line('$')] )
+    let oldpos = getpos( '.' ) 
+    call searchpair( '(', '', ')', 'brW', s:skip_sc, matchf )
+    normal! %
+    let newpos = searchpos( '(', 'W' )
+    while newpos[0] != 0 && (s:InsideComment() || s:InsideString())
+        let newpos = searchpos( '(', 'W' )
+    endwhile
+    if newpos[0] == 0
+        " No '(' found, don't move cursor
+        call setpos( '.', oldpos )
     endif
 endfunction
 
