@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.9.0
-" Last Change:  05 Oct 2011
+" Version:      0.9.1
+" Last Change:  12 Oct 2011
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -226,6 +226,11 @@ if !exists( 'g:slimv_repl_wrap' )
     let g:slimv_repl_wrap = 1
 endif
 
+" Wrap long lines in SLDB buffer
+if !exists( 'g:slimv_sldb_wrap' )
+    let g:slimv_sldb_wrap = 0
+endif
+
 " Maximum number of lines echoed from the evaluated form
 if !exists( 'g:slimv_echolines' )
     let g:slimv_echolines = 4
@@ -326,6 +331,7 @@ let s:current_buf = -1                                    " Swank action was req
 let s:current_win = -1                                    " Swank action was requested from this window
 let s:skip_sc = 'synIDattr(synID(line("."), col("."), 0), "name") =~ "[Ss]tring\\|[Cc]omment"'
                                                           " Skip matches inside string or comment 
+let s:frame_def = '^\s\{0,2}\d\{1,3}:'                    " Regular expression to match SLDB restart or frame identifier
 let s:sldb_name      = 'Slimv.SLDB'                       " Name of the SLDB buffer
 let s:inspect_name   = 'Slimv.INSPECT'                    " Name of the Inspect buffer
 
@@ -647,7 +653,7 @@ function! SlimvOpenReplBuffer()
         noremap  <buffer> <silent>        j      gj
         noremap  <buffer> <silent>        0      g0
         noremap  <buffer> <silent>        $      :call <SID>EndOfScreenLine()<CR>
-        set wrap
+        setlocal wrap
     endif
 
     hi SlimvNormal term=none cterm=none gui=none
@@ -696,6 +702,11 @@ function SlimvOpenSldbBuffer()
     setlocal foldmethod=marker
     setlocal foldmarker={{{,}}}
     setlocal foldtext=substitute(getline(v:foldstart),'{{{','','')
+    setlocal iskeyword+=+,-,*,/,%,<,=,>,:,$,?,!,@-@,94,~,#,\|,&,{,},[,]
+    if g:slimv_sldb_wrap
+        setlocal wrap
+    endif
+
     if version < 703
         " conceal mechanism is defined since Vim 7.3
         syn match Ignore /{{{/
@@ -705,7 +716,7 @@ function SlimvOpenSldbBuffer()
         syn match Comment /{{{/ conceal
         syn match Comment /}}}/ conceal
     endif
-    syn match Type /^\s*\d\+:/
+    syn match Type /^\s\{0,2}\d\{1,3}:/
     syn match Type /^\s\+in "\(.*\)" \(line\|byte\) \(\d\+\)$/
 endfunction
 
@@ -732,6 +743,22 @@ function SlimvQuitSldb()
     silent! %d
     call SlimvEndUpdate()
     b #
+endfunction
+
+" Open SLDB buffer and place cursor on the given frame
+function SlimvGotoFrame( frame )
+    call SlimvOpenSldbBuffer()
+    let bcktrpos = search( '^Backtrace:', 'bcnw' )
+    let line = getline( '.' )
+    let item = matchstr( line, '^\s*' . a:frame .  ':' )
+    if item != '' && line('.') > bcktrpos
+        " Already standing on the frame
+        return
+    endif
+
+    " Must locate the frame starting from the 'Backtrace:' string
+    call search( '^Backtrace:', 'bcw' )
+    call search( '^\s*' . a:frame .  ':', 'w' )
 endfunction
 
 " Set 'iskeyword' option depending on file type
@@ -984,7 +1011,9 @@ function! SlimvSend( args, echoing, output )
         " Open a new line for the output
         call append( '$', '' )
     endif
-    call SlimvMarkBufferEnd()
+    if a:output
+        call SlimvMarkBufferEnd()
+    endif
     call SlimvCommand( 'python swank_input("s:swank_form")' )
     let s:swank_package = ''
     let s:refresh_disabled = 0
@@ -1301,24 +1330,23 @@ function! SlimvHandleEnterSldb()
     let line = getline('.')
     if s:debug_activated
         " Check if Enter was pressed in a section printed by the SWANK debugger
-        let item = matchstr( line, '^\s*\d\+' )
+        if foldlevel('.')
+            " With a fold just toggle visibility
+            normal za
+            return
+        endif
+        let item = matchstr( line, s:frame_def )
         if item != ''
-            let item = substitute( item, '\s', '', 'g' )
+            let item = substitute( item, '\s\|:', '', 'g' )
             if search( '^Backtrace:', 'bnW' ) > 0
-                if foldlevel('.')
-                    " With a fold just toggle visibility
-                    normal za
-                    return
-                endif
                 " Display item-th frame
                 call SlimvMakeFold()
-                call setpos( "'s", [0, line('.'), col('.'), 0] )
+                silent execute 'python swank_frame_locals("' . item . '")'
                 if b:SlimvImplementation() != 'clisp'
                     " These are not implemented for CLISP
-                    silent execute 'python swank_frame_call("' . item . '")'
                     silent execute 'python swank_frame_source_loc("' . item . '")'
+                    silent execute 'python swank_frame_call("' . item . '")'
                 endif
-                silent execute 'python swank_frame_locals("' . item . '")'
                 return
             endif
             if search( '^Restarts:', 'bnW' ) > 0
@@ -1509,6 +1537,7 @@ endfunction
 " Start and connect slimv server
 " This is a quite dummy function that just evaluates the empty string
 function! SlimvConnectServer()
+    call SlimvBeginUpdate()
     let repl_buf = bufnr( g:slimv_repl_file )
     let repl_win = bufwinnr( repl_buf )
     if repl_buf == -1 || ( g:slimv_repl_split && repl_win == -1 )
@@ -1529,7 +1558,15 @@ function! SlimvGetRegion() range
         let firstcol = col( a:firstline ) - 1
         let lastcol  = col( a:lastline  ) - 2
     else
+        " No range was selected, select current paragraph
+        normal! vap
+        execute "normal! \<Esc>"
+        call setpos( '.', oldpos ) 
         let lines = getline( "'<", "'>" )
+        if lines == [] || lines == ['']
+            call SlimvError( "No range selected." )
+            return []
+        endif
         let firstcol = col( "'<" ) - 1
         let lastcol  = col( "'>" ) - 2
     endif
@@ -1556,7 +1593,9 @@ endfunction
 " Eval buffer lines in the given range
 function! SlimvEvalRegion() range
     let lines = SlimvGetRegion()
-    call SlimvEval( lines )
+    if lines != []
+        call SlimvEval( lines )
+    endif
 endfunction
 
 " Eval contents of the 's' register
@@ -1621,12 +1660,16 @@ function! s:DebugFrame()
         " Check if we are in SLDB
         let repl_buf = bufnr( s:sldb_name )
         if repl_buf != -1 && repl_buf == bufnr( "%" )
-            let line = getline('.')
-            let item = matchstr( line, '\d\+' )
-            if item != ''
-                let section = getline( line('.') - item - 1 )
-                if section[0:9] == 'Backtrace:'
-                    return item
+            let bcktrpos = search( '^Backtrace:', 'bcnw' )
+            let framepos = line( '.' )
+            if matchstr( getline('.'), s:frame_def ) == ''
+                let framepos = search( s:frame_def, 'bcnw' )
+            endif
+            if framepos > 0 && bcktrpos > 0 && framepos > bcktrpos
+                let line = getline( framepos )
+                let item = matchstr( line, s:frame_def )
+                if item != ''
+                    return substitute( item, '\s\|:', '', 'g' )
                 endif
             endif
         endif
@@ -1650,7 +1693,7 @@ function! SlimvInteractiveEval()
     let frame = s:DebugFrame()
     if frame != ''
         " We are in the debugger, eval expression in the frame the cursor stands on
-        let e = input( 'Eval in frame: ' )
+        let e = input( 'Eval in frame ' . frame . ': ' )
         if e != ''
             let result = SlimvCommandGetResponse( ':eval-string-in-frame', 'python swank_eval_in_frame("' . e . '", ' . frame . ')' )
             if result != ''
@@ -1735,6 +1778,19 @@ function! SlimvMacroexpandAll()
     endif
 endfunction
 
+" Set a breakpoint on the beginning of a function
+function! SlimvBreak()
+    if s:swank_connected
+        let s = input( 'Set breakpoint: ', SlimvSelectSymbol() )
+        if s != ''
+            call SlimvCommandUsePackage( 'python swank_set_break("' . s . '")' )
+            redraw!
+        endif
+    else
+        call SlimvError( "Not connected to SWANK server." )
+    endif
+endfunction
+
 " Switch trace on for the selected function (toggle for swank)
 function! SlimvTrace()
     if s:swank_connected
@@ -1777,10 +1833,28 @@ function! SlimvInspect()
     let frame = s:DebugFrame()
     if frame != ''
         " Inspect selected for a frame in the debugger's Backtrace section
-        let s = input( 'Inspect in frame ' . frame . ': ' )
-        call SlimvCommand( 'python swank_inspect_in_frame("' . s . '", ' . frame . ')' )
-        call SlimvRefreshReplBuffer()
-        return
+        let line = getline( '.' )
+        if matchstr( line, s:frame_def ) != ''
+            " This is the base frame line in form '  1: xxxxx'
+            let sym = ''
+        elseif matchstr( line, '^\s\+in "\(.*\)" \(line\|byte\)' ) != ''
+            " This is the source location line
+            let sym = ''
+        elseif matchstr( line, '^\s\+No source line information' ) != ''
+            " This is the no source location line
+            let sym = ''
+        elseif matchstr( line, '^\s\+Locals:' ) != ''
+            " This is the 'Locals' line
+            let sym = ''
+        else
+            let sym = SlimvSelectSymbolExt()
+        endif
+        let s = input( 'Inspect in frame ' . frame . ' (evaluated): ', sym )
+        if s != ''
+            call SlimvBeginUpdate()
+            call SlimvCommand( 'python swank_inspect_in_frame("' . s . '", ' . frame . ')' )
+            call SlimvRefreshReplBuffer()
+        endif
     else
         let s = input( 'Inspect: ', SlimvSelectSymbolExt() )
         if s != ''
@@ -1974,6 +2048,9 @@ endfunction
 function! SlimvCompileRegion() range
     let oldpos = getpos( '.' ) 
     let lines = SlimvGetRegion()
+    if lines == []
+        return
+    endif
     let region = join( lines, "\n" )
     if s:swank_connected
         let s:swank_form = region
@@ -2292,16 +2369,17 @@ call s:MenuMap( 'Slim&v.&Evaluation.&Undefine-Function',        g:slimv_leader.'
 " Debug commands
 call s:MenuMap( 'Slim&v.De&bugging.Macroexpand-&1',             g:slimv_leader.'1',  g:slimv_leader.'m1',  ':<C-U>call SlimvMacroexpand()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Macroexpand-All',           g:slimv_leader.'m',  g:slimv_leader.'ma',  ':<C-U>call SlimvMacroexpandAll()<CR>' )
-
 call s:MenuMap( 'Slim&v.De&bugging.Toggle-&Trace\.\.\.',        g:slimv_leader.'t',  g:slimv_leader.'dt',  ':call SlimvTrace()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.U&ntrace-All',               g:slimv_leader.'T',  g:slimv_leader.'du',  ':call SlimvUntrace()<CR>' )
-
+call s:MenuMap( 'Slim&v.De&bugging.Set-&Breakpoint',            g:slimv_leader.'B',  g:slimv_leader.'db',  ':call SlimvBreak()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.Disassemb&le\.\.\.',         g:slimv_leader.'l',  g:slimv_leader.'dd',  ':call SlimvDisassemble()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Inspect\.\.\.',             g:slimv_leader.'i',  g:slimv_leader.'di',  ':call SlimvInspect()<CR>' )
+call s:MenuMap( 'Slim&v.De&bugging.-SldbSep-',                  '',                  '',                   ':' )
 call s:MenuMap( 'Slim&v.De&bugging.&Abort',                     g:slimv_leader.'a',  g:slimv_leader.'da',  ':call SlimvDebugCommand("swank_invoke_abort")<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Quit-to-Toplevel',          g:slimv_leader.'q',  g:slimv_leader.'dq',  ':call SlimvDebugCommand("swank_throw_toplevel")<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Continue',                  g:slimv_leader.'n',  g:slimv_leader.'dc',  ':call SlimvDebugCommand("swank_invoke_continue")<CR>' )
-call s:MenuMap( 'Slim&v.De&bugging.&List-Threads',              g:slimv_leader.'H',  g:slimv_leader.'dl',  ':call SlimvListThreads()<CR>' )
+call s:MenuMap( 'Slim&v.De&bugging.-ThreadSep-',                '',                  '',                   ':' )
+call s:MenuMap( 'Slim&v.De&bugging.List-T&hreads',              g:slimv_leader.'H',  g:slimv_leader.'dl',  ':call SlimvListThreads()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Kill-Thread\.\.\.',         g:slimv_leader.'K',  g:slimv_leader.'dk',  ':call SlimvKillThread()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Debug-Thread\.\.\.',        g:slimv_leader.'G',  g:slimv_leader.'dg',  ':call SlimvDebugThread()<CR>' )
 
@@ -2324,7 +2402,7 @@ call s:MenuMap( 'Slim&v.&Xref.List-Call&ees',                   g:slimv_leader.'
 
 " Profile commands
 call s:MenuMap( 'Slim&v.&Profiling.Toggle-&Profile\.\.\.',      g:slimv_leader.'p',  g:slimv_leader.'pp',  ':<C-U>call SlimvProfile()<CR>' )
-call s:MenuMap( 'Slim&v.&Profiling.Profile-&By-Substring\.\.\.',g:slimv_leader.'B',  g:slimv_leader.'pb',  ':<C-U>call SlimvProfileSubstring()<CR>' )
+call s:MenuMap( 'Slim&v.&Profiling.Profile-&By-Substring\.\.\.',g:slimv_leader.'P',  g:slimv_leader.'pb',  ':<C-U>call SlimvProfileSubstring()<CR>' )
 call s:MenuMap( 'Slim&v.&Profiling.Unprofile-&All',             g:slimv_leader.'U',  g:slimv_leader.'pa',  ':<C-U>call SlimvUnprofileAll()<CR>' )
 call s:MenuMap( 'Slim&v.&Profiling.&Show-Profiled',             g:slimv_leader.'?',  g:slimv_leader.'ps',  ':<C-U>call SlimvShowProfiled()<CR>' )
 call s:MenuMap( 'Slim&v.&Profiling.-ProfilingSep-',             '',                  '',                   ':' )
