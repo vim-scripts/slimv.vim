@@ -33,6 +33,7 @@ Debug commands:
     *  Toggle Trace
     *  Untrace All
     *  Disassemble
+    *  Set Breakpoint
     *  Inspect
     *  Abort
     *  Quit to Toplevel
