@@ -4,8 +4,8 @@
 #
 # SWANK client for Slimv
 # swank.py:     SWANK client code for slimv.vim plugin
-# Version:      0.9.2
-# Last Change:  26 Oct 2011
+# Version:      0.9.3
+# Last Change:  21 Dec 2011
 # Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 # License:      This file is placed in the public domain.
 #               No warranty, express or implied.
@@ -41,6 +41,7 @@ package         = 'COMMON-LISP-USER' # Current package
 actions         = dict()        # Swank actions (like ':write-string'), by message id
 indent_info     = dict()        # Data of :indentation-update
 frame_locals    = dict()        # Map frame variable names to their index
+inspect_content = []            # Partial content of the last Inspect command
 
 
 ###############################################################################
@@ -337,18 +338,24 @@ def swank_recv(msglen, timeout):
                 rec = rec + data
     rec = ''
 
-def swank_parse_inspect(struct):
+def swank_parse_inspect_content(pcont):
     """
-    Parse the swank inspector output
+    Parse the swank inspector content
     """
-    vim.command('call SlimvOpenInspectBuffer()')
+    global inspect_content
+
+    cur_line = vim.eval('line(".")')
     buf = vim.current.buffer
-    buf[:] = ['Inspecting ' + parse_plist(struct, ':title'), '--------------------', '']
-    pcont = parse_plist(struct, ':content')
-    cont = pcont[0]
+    # First 3 lines are filled in swank_parse_inspect()
+    buf[3:] = []
+    if type(pcont[0]) == list:
+        inspect_content = inspect_content + pcont[0]  # Append to the previous content
+    istate = pcont[1]
+    start  = pcont[2]
+    end    = pcont[3]
     lst = []
     linestart = 0
-    for el in cont:
+    for el in inspect_content:
         logprint(str(el))
         if type(el) == list:
             if el[0] == ':action':
@@ -371,9 +378,35 @@ def swank_parse_inspect(struct):
             lst.append(text)
             if text == "\n":
                 linestart = len(lst)
+    if int(istate) > int(end):
+        # Swank returns end+1000 if there are more entries to request
+        # Save current range for the next request
+        vc = ":let b:range_start=" + start
+        vim.command(vc)
+        vc = ":let b:range_end=" + end
+        vim.command(vc)
+        if lst[linestart][0] == '[':
+            lst.append("\n[--more--]")
+        else:
+            lst[linestart:] = "[--more--]"
+    buf = vim.current.buffer
     buf.append("".join(lst).split("\n"))
     buf.append(['', '[<<]'])
+    vim.command('normal! ' + cur_line + 'G')
     vim.command('call SlimvEndUpdate()')
+
+def swank_parse_inspect(struct):
+    """
+    Parse the swank inspector output
+    """
+    global inspect_content
+
+    vim.command('call SlimvOpenInspectBuffer()')
+    buf = vim.current.buffer
+    buf[:] = ['Inspecting ' + parse_plist(struct, ':title'), '--------------------', '']
+    pcont = parse_plist(struct, ':content')
+    inspect_content = []
+    swank_parse_inspect_content(pcont)
 
 def swank_parse_debug(struct):
     """
@@ -457,15 +490,21 @@ def swank_parse_compile(struct):
     return buf
 
 def swank_parse_list_threads(tl):
-    buf = ''
+    vim.command('call SlimvOpenThreadsBuffer()')
+    buf = vim.current.buffer
+    buf[:] = ['Idx  ID    Status                 Name                   Priority', \
+              '---- ----  --------------------   --------------------   ---------']
     lst = tl[1]
     headers = lst.pop(0)
     logprint(str(lst))
     idx = 0
     for t in lst:
-        buf = buf + "\n%3d. ID%3d: %-22s %s" % (idx, int(t[0]), unquote(t[2]), unquote(t[1]))
+        priority = ''
+        if len(t) > 3:
+            priority = unquote(t[3])
+        buf.append(["%3d:  %3d  %-22s %-22s %s" % (idx, int(t[0]), unquote(t[2]), unquote(t[1]), priority)])
         idx = idx + 1
-    return buf
+    vim.command('call SlimvEndUpdate()')
 
 def swank_parse_frame_call(struct, action):
     """
@@ -634,7 +673,7 @@ def swank_listen():
                         logprint('params: ' + str(params))
                         if type(params) == str:
                             element = params.lower()
-                            to_ignore = [':frame-call', ':quit-inspector']
+                            to_ignore = [':frame-call', ':quit-inspector', ':kill-thread', ':debug-thread']
                             to_nodisp = [':describe-symbol']
                             to_prompt = [':undefine-function', ':swank-macroexpand-1', ':swank-macroexpand-all', ':disassemble-form', \
                                          ':load-file', ':toggle-profile-fdefinition', ':profile-by-substring', ':swank-toggle-trace', 'sldb-break']
@@ -658,8 +697,6 @@ def swank_listen():
                                     retval = retval + new_line(retval) + prompt + '> '
 
                         elif type(params) == list and params:
-                            if type(params[0]) == list: 
-                                params = params[0]
                             element = ''
                             if type(params[0]) == str: 
                                 element = params[0].lower()
@@ -698,16 +735,15 @@ def swank_listen():
                                 retval = retval + new_line(retval) + swank_parse_compile(params) + prompt + '> '
                             else:
                                 if action.name == ':simple-completions':
-                                    if type(params) == list and type(params[0]) == str and params[0] != 'nil':
-                                        compl = "\n".join(params)
+                                    if type(params[0]) == list and type(params[0][0]) == str and params[0][0] != 'nil':
+                                        compl = "\n".join(params[0])
                                         retval = retval + compl.replace('"', '')
                                 elif action.name == ':fuzzy-completions':
-                                    if type(params) == list and type(params[0]) == list:
-                                        compl = "\n".join(map(lambda x: x[0], params))
+                                    if type(params[0]) == list and type(params[0][0]) == list:
+                                        compl = "\n".join(map(lambda x: x[0], params[0]))
                                         retval = retval + compl.replace('"', '')
                                 elif action.name == ':list-threads':
-                                    retval = retval + swank_parse_list_threads(r[1])
-                                    retval = retval + new_line(retval) + prompt + '> '
+                                    swank_parse_list_threads(r[1])
                                 elif action.name == ':xref':
                                     retval = retval + '\n' + swank_parse_xref(r[1][1])
                                     retval = retval + new_line(retval) + prompt + '> '
@@ -725,12 +761,14 @@ def swank_listen():
                                 elif action.name == ':frame-source-location':
                                     swank_parse_frame_source(params, action)
                                 elif action.name == ':frame-locals-and-catch-tags':
-                                    swank_parse_locals(params, action)
+                                    swank_parse_locals(params[0], action)
                                 elif action.name == ':profiled-functions':
                                     retval = retval + '\n' + 'Profiled functions:\n'
                                     for f in params:
                                         retval = retval + '  ' + f + '\n'
                                     retval = retval + prompt + '> '
+                                elif action.name == ':inspector-range':
+                                    swank_parse_inspect_content(params)
                                 if action:
                                     action.result = retval
 
@@ -902,11 +940,11 @@ def swank_return_string(s):
 
 def swank_inspect(symbol):
     cmd = '(swank:init-inspector "' + symbol + '")'
-    swank_rex(':init-inspector', cmd, get_package(), 't')
+    swank_rex(':init-inspector', cmd, get_swank_package(), 't')
 
 def swank_inspect_nth_part(n):
     cmd = '(swank:inspect-nth-part ' + str(n) + ')'
-    swank_rex(':inspect-nth-part', cmd, 'nil', 't', str(n))
+    swank_rex(':inspect-nth-part', cmd, get_swank_package(), 't', str(n))
 
 def swank_inspector_nth_action(n):
     cmd = '(swank:inspector-call-nth-action ' + str(n) + ')'
@@ -922,6 +960,12 @@ def swank_inspect_in_frame(symbol, n):
     else:
         cmd = '(swank:inspect-in-frame "' + symbol + '" ' + str(n) + ')'
     swank_rex(':inspect-in-frame', cmd, get_swank_package(), current_thread, str(n))
+
+def swank_inspector_range():
+    start = int(vim.eval("b:range_start"))
+    end   = int(vim.eval("b:range_end"))
+    cmd = '(swank:inspector-range ' + str(end) + " " + str(end+(end-start)) + ')'
+    swank_rex(':inspector-range', cmd, get_swank_package(), 't')
 
 def swank_quit_inspector():
     swank_rex(':quit-inspector', '(swank:quit-inspector)', 'nil', 't')
@@ -1000,15 +1044,15 @@ def swank_profile_reset():
 
 def swank_list_threads():
     cmd = '(swank:list-threads)'
-    swank_rex(':list-threads', cmd, get_package(), 't')
+    swank_rex(':list-threads', cmd, get_swank_package(), 't')
 
 def swank_kill_thread(index):
     cmd = '(swank:kill-nth-thread ' + str(index) + ')'
-    swank_rex(':kill-thread', cmd, get_package(), 't', str(index))
+    swank_rex(':kill-thread', cmd, get_swank_package(), 't', str(index))
 
 def swank_debug_thread(index):
     cmd = '(swank:debug-nth-thread ' + str(index) + ')'
-    swank_rex(':debug-thread', cmd, get_package(), 't', str(index))
+    swank_rex(':debug-thread', cmd, get_swank_package(), 't', str(index))
 
 ###############################################################################
 # Generic SWANK connection handling
@@ -1089,7 +1133,7 @@ def swank_output(echo):
     debug_activated = False
     result = swank_listen()
     pending = actions_pending()
-    while result == '' and pending > 0 and count < listen_retries:
+    while sock and result == '' and pending > 0 and count < listen_retries:
         result = swank_listen()
         pending = actions_pending()
         count = count + 1

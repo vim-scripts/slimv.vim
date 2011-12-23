@@ -1,7 +1,7 @@
-*slimv.txt*                    Slimv                 Last Change: 27 Oct 2011
+*slimv.txt*                    Slimv                 Last Change: 22 Dec 2011
 
 Slimv                                                                  *slimv*
-                               Version 0.9.2
+                               Version 0.9.3
 
 The Superior Lisp Interaction Mode for Vim.
 This plugin is aimed to help Lisp development by interfacing between Vim and
@@ -99,7 +99,7 @@ To install the script:
     This will generate all the help tags for any file located in the doc
     directory.
   - Enter path definitions into your vimrc (if the default values are not
-    valid for your Vim/Python/Lisp installation).
+    valid for your Vim/Lisp installation).
     See |slimv-configuration| below on how to do this.
 
 
@@ -170,7 +170,9 @@ For the Swank options plese visit |swank-configuration|.
 |g:slimv_package|            If nonzero, Slimv package/namespace handling is
                              switched on.
 
-|g:slimv_python|             Path for the Python interpreter.
+|g:slimv_preferred|          Name of the preferred lisp implementation.
+
+|g:slimv_repl_max_len|       Maximum number of lines in the REPL buffer.
 
 |g:slimv_repl_name|          Name of the REPL buffer.
 
@@ -193,6 +195,8 @@ For the Swank options plese visit |swank-configuration|.
 
 |g:slimv_swank_scheme|       Command used to start the Scheme SWANK server.
 
+|g:slimv_threads_name|       Name of the Threads buffer.
+
 |g:slimv_timeout|            Timeout defined for starting up or connecting
                              to the SWANK server.
 
@@ -208,30 +212,19 @@ For the Swank options plese visit |swank-configuration|.
 
 Note: Most options require to restart the Vim session when modified.
 
-Slimv tries to autodetect the Python and Lisp installation directories,
-however the algorithm is not very sophisticated.
+Slimv tries to autodetect the Lisp installation directory, however the
+algorithm is not very sophisticated.
 If the installation directories are put in the path, then the autodetection
 should find them (this is usually the case on Linux). Otherwise (on Windows)
 some frequently used directories are searched under C:\ and C:\Program Files.
-For a minimum, Slimv needs to know the path of the existing Python and Lisp
-installations, so if autodetection does not work for you, then set the
-following global variables in your vimrc.
+For a minimum, Slimv needs to know the path of the existing Lisp installation,
+so if autodetection does not work for you, then set the following global
+variables in your vimrc.
 
 Note: On Windows use the / (slash) character instead of \ (backslash) as the
       directory separator to avoid any incidental character escaping problems
       while the paths are beeing passed between the Slimv processes.
       On Linux this is not an issue.
-
-                                                               *g:slimv_python*
-This is the installation path of the Python interpreter.
-Normally the Python path is autodetected, but sometimes autodetection fails
-and you need to set up the path in your .vimrc file explicitly.
-If the Python path contains space characters then either the spaces should be
-escaped (Linux) or the short 8.3 filename format should be used (Windows).
-Enclosing the full Python path in double quotes may also work, but this depends
-on the command string handling of the console command used (xterm/cmd.exe/etc).
-Example:
-    let g:slimv_python = 'C:/MyPythonDir/python.exe'
 
                                                                  *g:slimv_lisp*
 This is the installation path of the Lisp interpreter.
@@ -245,10 +238,27 @@ implementation.
 Example:
     let g:slimv_impl = 'sbcl'
 
+                                                            *g:slimv_preferred*
+Name of the preferred lisp implementation. The autodetection mechanism tries to
+choose this one if possible, i.e. if installed and found in the path or in the
+standard installation directories.
+It's typical use is when there are multiple lisps present in the system and
+the autodetection chooses an undesired implementation.
+
+Valid choices are for lisp:
+    'sbcl', 'clisp', 'cmu', 'ecl', 'allegro', 'lispworks', 'clozure'
+For Scheme:
+    'mit'
+
+Example:
+    let g:slimv_preferred = 'clisp'
+This means that Slimv will use clisp even if both sbcl and clisp are installed
+and the autodetection would choose sbcl.
+
                                                             *g:slimv_swank_cmd*
                                                         *g:slimv_swank_clojure*
                                                          *g:slimv_swank_scheme*
-Slimv tries to autodetect your Python/Lisp/SWANK installation.
+Slimv tries to autodetect your Lisp/SWANK installation.
 If the location for the SWANK server is not identified by the script, or you
 want to use a different command for starting the SWANK server, then you may
 want to customize the g:slimv_swank_cmd (general) and g:slimv_swank_clojure
@@ -315,8 +325,12 @@ performance you may want to increase the block size, e.g. to 64 kbytes:
 Host name or IP address of the SWANK server. Default value is 'localhost'.
 The SWANK server may run on a remote machine, but currently only unencrypted
 plain socket communication is supported, no SSH or whatsoever.
+
 Please note that if the SWANK server is on a remote machine then Slimv is
 unable to start it, so you need to run the SWANK server manually.
+Actually there is a workaround for this: run Vim inside a GNU screen session.
+Slimv will autodetect this and modify the Swank command so that the Swank
+server is run inside a newly opened virtual terminal in screen.
 
                                                                  *g:swank_port*
 The SWANK server is connected to port 4005 by default. This can be changed
@@ -368,8 +382,9 @@ Specifies the command to start the browser in order to display the Common Lisp
 Hyperspec or the Clojure API. If the command contains spaces then enclose the
 whole string in double quotes or escape the spaces with a backslash.
 This option is empty by default, which means that the command associated with
-the .html extension (on Windows) or returned by the Python webbrowser package
-(on Linux) is used to start the browser.
+the .html extension (on Windows) or xdg-open (on Linux) is used to start the
+browser. If xdg-open is not installed then the Python webbrowser package is
+used to identify the default browser on Linux.
 
                                                             *g:slimv_repl_name*
 Name of the REPL buffer. Default is 'REPL'. Space and some other special
@@ -384,6 +399,11 @@ Not all special characters are allowed, e.g. '*' does not work in Windows.
                                                          *g:slimv_inspect_name*
 Name of the Inspect buffer. Default is 'INSPECT'. Space and some other special
 characters need to be escaped (e.g. 'Slimv\ Incpector', '\#INSPECT\#').
+Not all special characters are allowed, e.g. '*' does not work in Windows.
+
+                                                         *g:slimv_threads_name*
+Name of the Threads buffer. Default is 'THREADS'. Space and some other special
+characters need to be escaped (e.g. 'Slimv\ Threads', '\#THREADS\#').
 Not all special characters are allowed, e.g. '*' does not work in Windows.
 
                                                            *g:slimv_repl_split*
@@ -416,6 +436,13 @@ The default value is 200 (=0.2 sec).
                                                               *g:slimv_package*
 If nonzero then Slimv package/namespace handling is switched on. Please find
 details in the |slimv-package| section.
+
+                                                         *g:slimv_repl_max_len*
+Maximum number of lines for the REPL buffer. Only the last this number of lines
+are kept in the REPL buffer, all lines before that are erased, but some opening
+parens and/or double quotes may remain in order to maintain their balanced
+state. The default value for this option is 0, meaning that the number of lines
+is unlimited, i.e. no line is ever erased.
 
                                                           *g:slimv_repl_syntax*
 Enables syntax highlighting for the REPL buffer. Switched off by default for
@@ -621,6 +648,7 @@ For a complete reference of SWANK functions implemented see |swank-functions|.
 |swank-describe|             Describe symbol in tooltip
 |swank-completions|          List of possible symbol completions
 |swank-inspect|              Inspector
+|swank-threads|              Threads
 |swank-trace|                Trace function
 |swank-profile|              Profiler
 |swank-xref|                 Cross Reference
@@ -788,12 +816,34 @@ then the inspector is popped up one level, or if this was the topmost level
 then Slimv exits the Inspector.
 Pressing <Leader>q also exits the Inspector.
 
+If the object is too big to be fully displayed, this is signaled by the
+[--more--] text. When pressing Enter on the line containing [--more--] then
+the next part of the inspected object is queried from the swank server and
+displayed in the Inspect buffer.
+
 
 If debugger is activated and the cursor is placed on a frame line in the
 Backtrace section, then the Inspect command inspects objects in the given
 frame. It means that it is possible to examine the value of local variables
 within the scope of the given frame ("inspect-in-frame").
 
+
+-------------------------------------------------------------------------------
+THREADS                                                         *swank-threads*
+
+The Swank Threads are presented in a separate buffer.
+
+When the cursor is placed on a thread-line and <Backspace> or <Leader>k is
+pressed or the Kill-Thread function is selected then the given thread is killed.
+If multiple thread-lines are selected then all marked threads are killed.
+
+When the cursor is placed on a thread-line and <Leader>d is pressed or the
+Debug-Thread function is selected then the given thread is interrupted and the
+debugger is invoked.
+
+Pressing <Leader>r refreshes the thread list.
+
+Pressing <Leader>q exits the Threads buffer.
 
 -------------------------------------------------------------------------------
 TRACE                                                             *swank-trace*
@@ -1184,7 +1234,6 @@ FAQ                                                                 *slimv-faq*
          :echo SlimvSwankCommand()         
      Also check the following Slimv variables in Vim, maybe they are not
      correctly autodetected and you need to override them in your .vimrc:
-         :echo g:slimv_python
          :echo g:slimv_lisp
          :echo g:slimv_swank_cmd   (or g:slimv_swank_clojure for Clojure)
 
@@ -1249,6 +1298,26 @@ FAQ                                                                 *slimv-faq*
 
 ===============================================================================
 CHANGE LOG                                                    *slimv-changelog*
+
+0.9.3  - Start Swank server in virtual terminal when running in GNU screen
+         on Linux (thanks to Oleg Terenchuk).
+       - Reuse a window for slimv also when there are three or more windows open.
+       - Don't go to end of REPL buffer if user moved the cursor away from EOF.
+       - Use xdg-open for default browser in Linux.
+       - Removed option g:slimv_python.
+       - Added option g:slimv_repl_max_len for limiting the number of lines in
+         the REPL buffer.
+       - Added option g:slimv_preferred to choose preferred lisp implementation.
+       - Query additional parts of big inspected object upon pressing Enter on
+         [--more--].
+       - Thread List is displayed and handled in a separate Threads buffer.
+       - Bugfix: window navigation problems between source/REPL/SLDB/etc.
+       - Bugfix: error messages when Swank server window is closed.
+       - Bugfix: return control to vim after starting browser defined by
+         g:slimv_browser_cmd.
+       - Bugfix: fixed indentation of arguments before &body argument.
+       - Bugfix: autocomplete for dotted package/namespace names.
+       - Bugfix: indentation of aif.
 
 0.9.2  - Added option g:swank_log to enable swank debug log.
        - Added options g:slimv_repl_name, g:slimv_sldb_name, g:slimv_inspect_name.
@@ -1598,16 +1667,14 @@ ISSUES, LIMITATIONS, KNOWN BUGS                                  *slimv-issues*
 
 - Vim register "s is used for all form selections, so its original content is
   destroyed.
-- Vim mark 's is used to mark the end of the REPL buffer, i.e. the beginning
-  of the "command line", also the for the location of the current frame in
-  the SLDB buffer.
 - Needs Vim version 7.0 or above, because of the intensive use of lists.
 - Needs the same Python version that Vim is compiled against
 - It is not possible to run separate Lisp and Clojure REPL in the same
   Slimv session.
-- Recent macvim (OS X) versions seem to have a Python 2.7 binding problem
+- Recent macvim (OS X) 64-bit versions seem to have a Python 2.7 binding problem
   causing segmentation faults when Slimv tries to connect to the Swank server.
-  One possible solution is to rebuild macvim with Python binding changed to 2.6.
+  One possible solution is to use the 32-bit version of macvim.
+  Another solution is to rebuild macvim with Python binding changed to 2.6.
 
 
 ===============================================================================
@@ -1657,8 +1724,8 @@ ideas, suggestions on the SWANK integration.
 Also thanks to Vlad Hanciuta, Marcin Fatyga, Dmitry Petukhov,
 Daniel Solano Gómez, Brian Kropf, Len Weincier, Andreas Salwasser,
 Jon Thacker, Andrew Hills, Jerome Baum, John Obbele, Andreas Fredriksson,
-Ömer Sinan Agacan, Tobias Pflug, Chris Cahoon, Mats Rauhala for additional
-notes and contributions.
+Ömer Sinan Agacan, Tobias Pflug, Chris Cahoon, Mats Rauhala, Oleg Terenchuk
+for additional notes and contributions.
 
 I would also like to say a big thank you to everyone donating to support
 development. This is a one-element list at the moment: :)
