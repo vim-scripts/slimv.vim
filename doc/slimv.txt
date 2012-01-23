@@ -1,7 +1,7 @@
-*slimv.txt*                    Slimv                 Last Change: 22 Dec 2011
+*slimv.txt*                    Slimv                 Last Change: 23 Jan 2012
 
 Slimv                                                                  *slimv*
-                               Version 0.9.3
+                               Version 0.9.4
 
 The Superior Lisp Interaction Mode for Vim.
 This plugin is aimed to help Lisp development by interfacing between Vim and
@@ -146,10 +146,18 @@ For the Swank options plese visit |swank-configuration|.
 
 |g:slimv_ctags|              OS command to generate tags file.
 
+|g:slimv_disable_clojure|    Disable Slimv for Clojure files.
+
+|g:slimv_disable_lisp|       Disable Slimv for Lisp files.
+
+|g:slimv_disable_scheme|     Disable Slimv for Scheme files.
+
 |g:slimv_echolines|          Echo only this number of lines from the form
                              being evaluated.
 
 |g:slimv_impl|               The Lisp implementation. Defaults to 'clisp'.
+
+|g:slimv_indent_keylists|    Enable special indentation for keyword lists.
 
 |g:slimv_indent_maxlines|    Maximum number of lines searched backwards for
                              indenting special forms
@@ -254,6 +262,16 @@ Example:
     let g:slimv_preferred = 'clisp'
 This means that Slimv will use clisp even if both sbcl and clisp are installed
 and the autodetection would choose sbcl.
+
+                                                      *g:slimv_disable_clojure*
+                                                         *g:slimv_disable_lisp*
+                                                       *g:slimv_disable_scheme*
+If any of these options are set then the Slimv will not be loaded and enabled
+for the corresponding filetype.
+
+Example:
+You want to use Slimv for Lisp but don't want to use it for Scheme:
+    let g:slimv_disable_scheme = 1
 
                                                             *g:slimv_swank_cmd*
                                                         *g:slimv_swank_clojure*
@@ -476,6 +494,24 @@ the end of the form is not echoed, so paren balance is kept.
 If this option is set to zero then no line is echoed at all, if set to -1
 then all lines are always echoed.
 
+                                                      *g:slimv_indent_keylists*
+If nonzero then Slimv indents keyword lists like that:
+
+(:foo :bar
+ :baz :boo)
+
+instead of the function-style indentation:
+
+(:foo :bar
+      :baz :boo)
+
+This option is switched on by default. There are however some special forms
+(defpackage, defsystem) that are always indented in the function-style, e.g.:
+
+(defpackage :my-package
+  (:use :cl
+        :my-utils))
+
                                                       *g:slimv_indent_maxlines*
 Maximum number of lines searched backwards for indenting special forms, like
 flet, labels, macrolet. Setting it to a high value may slow down indenting.
@@ -558,9 +594,9 @@ sequence, then you may want to fine tune these Vim options:
     ,(      ,(t      Paredit Toggle
 
     Evaluation commands:
-    ,d      ,ed      Eval Defun (current top level form)
-    ,e      ,ee      Eval Current Expression (current subform)
-    ,r      ,er      Eval Region (visual selection)
+["x],d  ["x],ed      Eval Defun (current top level form) [put in register x]
+["x],e  ["x],ee      Eval Current Expression (current subform) [put in reg. x]
+["x],r  ["x],er      Eval Region (visual selection) [or text from register x]
     ,b      ,eb      Eval Buffer
     ,v      ,ei      Interactive Eval (evaluates in frame when in SLDB)
     ,u      ,eu      Undefine Function
@@ -584,7 +620,7 @@ sequence, then you may want to fine tune these Vim options:
     ,D      ,cd      Compile Defun
     ,L      ,cl      Compile and Load File
     ,F      ,cf      Compile File
-    ,R      ,cr      Compile Region
+["x],R  ["x],cr      Compile Region [or text from register x]
 
     Cross Reference commands
     ,xc     ,xc      Who Calls
@@ -627,6 +663,29 @@ sequence, then you may want to fine tune these Vim options:
     ,<Up>   ,rp      Previous Input
     ,<Down> ,rn      Next Input
     ,z      ,rr      Refresh REPL Buffer
+
+Note:
+Some mappings accept an optional "x prefix (where x is a register name)
+similarly to Vim's p (put) and y (yank) commands. These commands may
+additionally use the given Vim register to store or retrieve text.
+
+Commands "Eval Defun" and "Eval Current Expression" also store the form being
+evaluated in the given register. When using uppercase register name, the
+current form is appended to the contents of the register.
+
+Commands "Eval Region" and "Compile Region" use the contents of the given
+register (instead of the selected region) for evaluation or compilation.
+
+This feature may be used for remembering and recalling a test form used for
+testing parts of the code.
+
+Sample workflow:
+    1. place the cursor on the test form
+    2. "a,d stores the test form in register 'a' and evaluates it
+    3. test fails, bug is in other parts of code, try to fix it
+    4. send fixed code to the swank server the usual way
+    5. "a,r recalls the test form from register 'a' and evaluates it
+    7. repeat steps 3.-5.
 
 
 Also see |slimv-repl| for additional keybindings valid only in the REPL buffer.
@@ -1299,6 +1358,27 @@ FAQ                                                                 *slimv-faq*
 ===============================================================================
 CHANGE LOG                                                    *slimv-changelog*
 
+0.9.4  - Added highlighting of [] and {} for Clojure.
+       - Added options to disable Slimv for specific filetypes:
+         g:slimv_disable_clojure, g:slimv_disable_lisp, g:slimv_disable_scheme.
+       - Added option g:slimv_indent_keylists (thanks to Andrew Smirnoff).
+       - Added "set hidden" for safe switching of modified buffers.
+       - Added Help to Inspect and Threads buffers.
+       - Evaluate register contents if Eval-Region prefixed by ["x].
+       - Store form in register if Eval-Defun or Eval-Exp prefixed by ["x].
+       - Increased timeout for :create-repl.
+       - Stay in REPL buffer if Macroexpand performed in REPL.
+       - Search for either (in-ns) or (ns) for Clojure, remove quote character
+         from namespace name.
+       - Added SlimvEvalTestDefun() and SlimvEvalTestExp() for immediate testing
+         of the form(s) being evaluated.
+       - Bugfix: various indentation issues (function name is a subform,
+         let, let*, do, defpackage, defsystem, and [] for Clojure).
+       - Bugfix: Eval-Range problem in visual mode.
+       - Bugfix: SLDB parsing problem with newlines in description of restarts.
+       - Bugfix: REPL autoscroll incidentally stopping (thanks to Andrew Lyon).
+       - Bugfix: added some index out of range checks (thanks to Philipp Marek).
+
 0.9.3  - Start Swank server in virtual terminal when running in GNU screen
          on Linux (thanks to Oleg Terenchuk).
        - Reuse a window for slimv also when there are three or more windows open.
@@ -1724,8 +1804,8 @@ ideas, suggestions on the SWANK integration.
 Also thanks to Vlad Hanciuta, Marcin Fatyga, Dmitry Petukhov,
 Daniel Solano Gómez, Brian Kropf, Len Weincier, Andreas Salwasser,
 Jon Thacker, Andrew Hills, Jerome Baum, John Obbele, Andreas Fredriksson,
-Ömer Sinan Agacan, Tobias Pflug, Chris Cahoon, Mats Rauhala, Oleg Terenchuk
-for additional notes and contributions.
+Ömer Sinan Agacan, Tobias Pflug, Chris Cahoon, Mats Rauhala, Oleg Terenchuk,
+Andrew Lyon, Andrew Smirnoff for additional notes and contributions.
 
 I would also like to say a big thank you to everyone donating to support
 development. This is a one-element list at the moment: :)
