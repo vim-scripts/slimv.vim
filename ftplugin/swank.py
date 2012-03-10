@@ -4,8 +4,8 @@
 #
 # SWANK client for Slimv
 # swank.py:     SWANK client code for slimv.vim plugin
-# Version:      0.9.4
-# Last Change:  17 Jan 2012
+# Version:      0.9.5
+# Last Change:  07 Mar 2012
 # Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 # License:      This file is placed in the public domain.
 #               No warranty, express or implied.
@@ -184,8 +184,18 @@ def unquote(s):
     if len(s) < 2:
         return s
     if s[0] == '"' and s[-1] == '"':
-        t = s[1:-1].replace('\\"', '"')
-        return t.replace('\\\\', '\\')
+        slist = []
+        esc = False
+        for c in s[1:-1]:
+            if not esc and c == '\\':
+                esc = True
+            elif esc and c == 'n':
+                esc = False
+                slist.append('\n')
+            else:
+                esc = False
+                slist.append(c)
+        return "".join(slist)
     else:
         return s
 
@@ -440,6 +450,8 @@ def swank_parse_debug(struct):
     vim.command('call SlimvEndUpdate()')
     vim.command("call search('^Restarts:', 'w')")
     vim.command('stopinsert')
+    # This text will be printed into the REPL buffer
+    return unquote(condition[0]) + "\n" + unquote(condition[1]) + "\n"
 
 def swank_parse_xref(struct):
     """
@@ -788,7 +800,7 @@ def swank_listen():
 
                     elif result == ':abort':
                         debug_active = False
-                        vim.command('let s:debug_activated=0')
+                        vim.command('let s:sldb_level=-1')
                         if len(r[1]) > 1:
                             retval = retval + '; Evaluation aborted on ' + unquote(r[1][1]) + '\n' + prompt + '> '
                         else:
@@ -798,19 +810,19 @@ def swank_listen():
                     swank_parse_inspect(r[1])
 
                 elif message == ':debug':
-                    swank_parse_debug(r)
+                    retval = retval + swank_parse_debug(r)
 
                 elif message == ':debug-activate':
                     debug_active = True
                     debug_activated = True
                     current_thread = r[1]
                     sldb_level = r[2]
-                    vim.command('let s:debug_activated=' + sldb_level)
+                    vim.command('let s:sldb_level=' + sldb_level)
                     frame_locals.clear()
 
                 elif message == ':debug-return':
                     debug_active = False
-                    vim.command('let s:debug_activated=0')
+                    vim.command('let s:sldb_level=-1')
                     retval = retval + '; Quit to level ' + r[2] + '\n' + prompt + '> '
 
                 elif message == ':ping':
@@ -932,15 +944,16 @@ def swank_describe_function(fn):
     swank_rex(':describe-function', cmd, get_package(), 't')
 
 def swank_op_arglist(op):
-    cmd = '(swank:operator-arglist "' + op + '" "' + package + '")'
-    swank_rex(':operator-arglist', cmd, get_package(), 't')
+    pkg = get_swank_package()
+    cmd = '(swank:operator-arglist "' + op + '" ' + pkg + ')'
+    swank_rex(':operator-arglist', cmd, pkg, 't')
 
 def swank_completions(symbol):
-    cmd = '(swank:simple-completions "' + symbol + '" "' + package + '")'
+    cmd = '(swank:simple-completions "' + symbol + '" ' + get_swank_package() + ')'
     swank_rex(':simple-completions', cmd, 'nil', 't')
 
 def swank_fuzzy_completions(symbol):
-    cmd = '(swank:fuzzy-completions "' + symbol + '" "' + package + '" :limit 200 :time-limit-in-msec 2000)' 
+    cmd = '(swank:fuzzy-completions "' + symbol + '" ' + get_swank_package() + ' :limit 200 :time-limit-in-msec 2000)' 
     swank_rex(':fuzzy-completions', cmd, 'nil', 't')
 
 def swank_undefine_function(fn):
