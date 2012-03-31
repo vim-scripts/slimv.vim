@@ -1,7 +1,7 @@
 " paredit.vim:
 "               Paredit mode for Slimv
-" Version:      0.9.5
-" Last Change:  08 Feb 2012
+" Version:      0.9.6
+" Last Change:  13 Mar 2012
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -229,7 +229,12 @@ function! PareditOpfunc( func, type, visualmode )
 
         " Find and keep unbalanced matched characters in the region
         let endingwhitespace = matchstr(putreg, "\\s*$")
-        let matched = s:GetMatchedChars( putreg, s:InsideString( "'<" ), s:InsideComment( "'<" ) )
+        let instring = s:InsideString( line("'<"), col("'<") )
+        if col("'>") > 1 && !s:InsideString( line("'<"), col("'<") - 1 )
+            " We are at the beginning of the string
+            let instring = 0
+        endif
+        let matched = s:GetMatchedChars( putreg, instring, s:InsideComment( line("'<"), col("'<") ) )
         let matched = s:Unbalanced( matched )
         let matched = substitute( matched, '\s', '', 'g' )
         if a:func == 'c'
@@ -308,7 +313,7 @@ function! PareditPut( cmd )
     let putreg = reg_save
 
     " Find unpaired matched characters by eliminating paired ones
-    let matched = s:GetMatchedChars( putreg, s:InsideString( '.' ), s:InsideComment( '.' ) )
+    let matched = s:GetMatchedChars( putreg, s:InsideString(), s:InsideComment() )
     let matched = s:Unbalanced( matched )
 
     if matched !~ '\S\+'
@@ -340,23 +345,42 @@ function! PareditToggle()
 endfunction
 
 " Does the current syntax item match the given regular expression?
-function! s:SynIDMatch( regexp, pos, match_eol )
-    let line = line( a:pos )
-    let col  = col ( a:pos )
-    if a:match_eol && col > len( getline( line ) )
+function! s:SynIDMatch( regexp, line, col, match_eol )
+    let col  = a:col
+    if a:match_eol && col > len( getline( a:line ) )
         let col = col - 1
     endif
-    return synIDattr( synID( line, col, 0), 'name' ) =~ a:regexp
+    return synIDattr( synID( a:line, col, 0), 'name' ) =~ a:regexp
 endfunction
 
 " Is the current cursor position inside a comment?
 function! s:InsideComment( ... )
-    return s:SynIDMatch( '[Cc]omment', a:0 ? a:1 : '.', 1 )
+    let l = a:0 ? a:1 : line('.')
+    let c = a:0 ? a:2 : col('.')
+    if &syntax == ''
+        " No help from syntax engine,
+        " remove strings and search for ';' up to the cursor position
+        let line = strpart( getline(l), 0, c - 1 )
+        let line = substitute( line, '\\"', '', 'g' )
+        let line = substitute( line, '"[^"]*"', '', 'g' )
+        return match( line, ';' ) >= 0
+    endif
+    return s:SynIDMatch( '[Cc]omment', l, c, 1 )
 endfunction
 
 " Is the current cursor position inside a string?
 function! s:InsideString( ... )
-    return s:SynIDMatch( '[Ss]tring', a:0 ? a:1 : '.', 0 )
+    let l = a:0 ? a:1 : line('.')
+    let c = a:0 ? a:2 : col('.')
+    if &syntax == ''
+        " No help from syntax engine,
+        " count quote characters up to the cursor position
+        let line = strpart( getline(l), 0, c - 1 )
+        let line = substitute( line, '\\"', '', 'g' )
+        let quotes = substitute( line, '[^"]', '', 'g' )
+        return len(quotes) % 2
+    endif
+    return s:SynIDMatch( '[Ss]tring', l, c, 0 )
 endfunction
 
 " Is this a Slimv REPL buffer?
@@ -1369,6 +1393,7 @@ endfunction
 au BufNewFile,BufRead *.lisp call PareditInitBuffer()
 au BufNewFile,BufRead *.cl   call PareditInitBuffer()
 au BufNewFile,BufRead *.clj  call PareditInitBuffer()
+au BufNewFile,BufRead *.cljs call PareditInitBuffer()
 au BufNewFile,BufRead *.scm  call PareditInitBuffer()
 au BufNewFile,BufRead *.rkt  call PareditInitBuffer()
 

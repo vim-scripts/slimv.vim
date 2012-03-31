@@ -1,7 +1,7 @@
 " slimv-scheme.vim:
 "               Scheme filetype plugin for Slimv
-" Version:      0.9.5
-" Last Change:  06 Mar 2012
+" Version:      0.9.6
+" Last Change:  25 Mar 2012
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -43,11 +43,15 @@ endfunction
 
 " Try to autodetect SWANK and build the command to load the SWANK server
 function! b:SlimvSwankLoader()
-    let swanks = split( globpath( &runtimepath, 'slime/contrib/swank-mit-scheme.scm'), '\n' )
-    if len( swanks ) == 0
-        return ''
-    endif
     if g:slimv_impl == 'mit'
+        if exists( 'g:scheme_builtin_swank' ) && g:scheme_builtin_swank
+            " MIT Scheme contains a built-in swank server since version 9.1.1
+            return 'scheme --eval "(let loop () (start-swank) (loop))"'
+        endif
+        let swanks = split( globpath( &runtimepath, 'slime/contrib/swank-mit-scheme.scm'), '\n' )
+        if len( swanks ) == 0
+            return ''
+        endif
         return '"' . g:slimv_lisp . '" --load "' . swanks[0] . '"'
     endif
     return ''

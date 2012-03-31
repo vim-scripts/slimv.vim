@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.9.5
-" Last Change:  07 Mar 2012
+" Version:      0.9.6
+" Last Change:  27 Mar 2012
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -186,7 +186,7 @@ endif
 
 " Syntax highlighting for the REPL buffer
 if !exists( 'g:slimv_repl_syntax' )
-    let g:slimv_repl_syntax = 0
+    let g:slimv_repl_syntax = 1
 endif
 
 " Alternative value (in msec) for 'updatetime' while the REPL buffer is changing
@@ -286,7 +286,6 @@ let s:swank_form = ''                                     " Form to send to SWAN
 let s:refresh_disabled = 0                                " Set this variable temporarily to avoid recursive REPL rehresh calls
 let s:sldb_level = -1                                     " Are we in the SWANK debugger? -1 == no, else SLDB level
 let s:compiled_file = ''                                  " Name of the compiled file
-let s:au_curhold_set = 0                                  " Whether the autocommand has been set
 let s:current_buf = -1                                    " Swank action was requested from this buffer
 let s:current_win = -1                                    " Swank action was requested from this window
 let s:skip_sc = 'synIDattr(synID(line("."), col("."), 0), "name") =~ "[Ss]tring\\|[Cc]omment"'
@@ -357,6 +356,25 @@ function! SlimvBeginUpdate()
         let s:current_win = -1
     else
         let s:current_win = winnr()
+    endif
+endfunction
+
+" Switch to the buffer/window that was active before a swank action
+function! SlimvRestoreFocus()
+    let buf = bufnr( "%" )
+    let win = bufwinnr( "%" )
+    if buf != s:current_buf && win != -1
+        " Switch to the caller buffer/window
+        if g:slimv_repl_split
+            if s:current_win == -1
+                let s:current_win = winnr('#')
+            endif
+            if s:current_win > 0 && s:current_win != win
+                execute s:current_win . "wincmd w"
+            endif
+        else
+            execute "buf " . s:current_buf
+        endif
     endif
 endfunction
 
@@ -503,8 +521,8 @@ endfunction
 " Switch refresh mode on:
 " refresh REPL buffer on frequent Vim events
 function! SlimvRefreshModeOn()
-    if ! s:au_curhold_set
-        let s:au_curhold_set = 1
+    if !exists( 'b:au_curhold_set' )
+        let b:au_curhold_set = 1
         execute "au CursorHold   * :call SlimvTimer()"
         execute "au CursorHoldI  * :call SlimvTimer()"
     endif
@@ -514,13 +532,16 @@ endfunction
 function! SlimvRefreshModeOff()
     execute "au! CursorHold"
     execute "au! CursorHoldI"
-    let s:au_curhold_set = 0
+    unlet b:au_curhold_set
 endfunction
 
 " Called when entering REPL buffer
 function! SlimvReplEnter()
     call SlimvAddReplMenu()
-    execute "au FileChangedRO " . g:slimv_repl_name . " :call SlimvRefreshModeOff()"
+    if !exists( 'b:au_filechanged_set' )
+        let b:au_filechanged_set = 1
+        execute "au FileChangedRO " . g:slimv_repl_name . " :call SlimvRefreshModeOff()"
+    endif
     call SlimvRefreshModeOn()
 endfunction
 
@@ -605,12 +626,71 @@ function s:EndOfScreenLine()
     endif
 endfunction
 
+" Set special syntax rules for the REPL buffer
+function! SlimvSetSyntaxRepl()
+    if SlimvGetFiletype() == 'scheme'
+        syn cluster replListCluster contains=@schemeListCluster,lispList
+    else
+        syn cluster replListCluster contains=@lispListCluster
+    endif
+
+if exists("g:lisp_rainbow") && g:lisp_rainbow != 0
+
+    syn region lispParen0           matchgroup=hlLevel0 start="`\=("  skip="|.\{-}|" end=")"  matchgroup=replPrompt end="^\S\+>"              contains=@replListCluster,lispParen1,replPrompt
+    syn region lispParen1 contained matchgroup=hlLevel1 start="`\=("  skip="|.\{-}|" end=")"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen2
+    syn region lispParen2 contained matchgroup=hlLevel2 start="`\=("  skip="|.\{-}|" end=")"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen3
+    syn region lispParen3 contained matchgroup=hlLevel3 start="`\=("  skip="|.\{-}|" end=")"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen4
+    syn region lispParen4 contained matchgroup=hlLevel4 start="`\=("  skip="|.\{-}|" end=")"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen5
+    syn region lispParen5 contained matchgroup=hlLevel5 start="`\=("  skip="|.\{-}|" end=")"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen6
+    syn region lispParen6 contained matchgroup=hlLevel6 start="`\=("  skip="|.\{-}|" end=")"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen7
+    syn region lispParen7 contained matchgroup=hlLevel7 start="`\=("  skip="|.\{-}|" end=")"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen8
+    syn region lispParen8 contained matchgroup=hlLevel8 start="`\=("  skip="|.\{-}|" end=")"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen9
+    syn region lispParen9 contained matchgroup=hlLevel9 start="`\=("  skip="|.\{-}|" end=")"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen0
+
+ if SlimvGetFiletype() == 'clojure'
+    syn region lispParen0           matchgroup=hlLevel0 start="`\=\[" skip="|.\{-}|" end="\]" matchgroup=replPrompt end="^\S\+>"              contains=@replListCluster,lispParen1,replPrompt
+    syn region lispParen1 contained matchgroup=hlLevel1 start="`\=\[" skip="|.\{-}|" end="\]" matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen2
+    syn region lispParen2 contained matchgroup=hlLevel2 start="`\=\[" skip="|.\{-}|" end="\]" matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen3
+    syn region lispParen3 contained matchgroup=hlLevel3 start="`\=\[" skip="|.\{-}|" end="\]" matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen4
+    syn region lispParen4 contained matchgroup=hlLevel4 start="`\=\[" skip="|.\{-}|" end="\]" matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen5
+    syn region lispParen5 contained matchgroup=hlLevel5 start="`\=\[" skip="|.\{-}|" end="\]" matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen6
+    syn region lispParen6 contained matchgroup=hlLevel6 start="`\=\[" skip="|.\{-}|" end="\]" matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen7
+    syn region lispParen7 contained matchgroup=hlLevel7 start="`\=\[" skip="|.\{-}|" end="\]" matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen8
+    syn region lispParen8 contained matchgroup=hlLevel8 start="`\=\[" skip="|.\{-}|" end="\]" matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen9
+    syn region lispParen9 contained matchgroup=hlLevel9 start="`\=\[" skip="|.\{-}|" end="\]" matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen0
+
+    syn region lispParen0           matchgroup=hlLevel0 start="`\={"  skip="|.\{-}|" end="}"  matchgroup=replPrompt end="^\S\+>"              contains=@replListCluster,lispParen1,replPrompt
+    syn region lispParen1 contained matchgroup=hlLevel1 start="`\={"  skip="|.\{-}|" end="}"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen2
+    syn region lispParen2 contained matchgroup=hlLevel2 start="`\={"  skip="|.\{-}|" end="}"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen3
+    syn region lispParen3 contained matchgroup=hlLevel3 start="`\={"  skip="|.\{-}|" end="}"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen4
+    syn region lispParen4 contained matchgroup=hlLevel4 start="`\={"  skip="|.\{-}|" end="}"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen5
+    syn region lispParen5 contained matchgroup=hlLevel5 start="`\={"  skip="|.\{-}|" end="}"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen6
+    syn region lispParen6 contained matchgroup=hlLevel6 start="`\={"  skip="|.\{-}|" end="}"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen7
+    syn region lispParen7 contained matchgroup=hlLevel7 start="`\={"  skip="|.\{-}|" end="}"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen8
+    syn region lispParen8 contained matchgroup=hlLevel8 start="`\={"  skip="|.\{-}|" end="}"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen9
+    syn region lispParen9 contained matchgroup=hlLevel9 start="`\={"  skip="|.\{-}|" end="}"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen0
+ endif
+
+else
+
+    syn region lispList             matchgroup=Delimiter start="("    skip="|.\{-}|" end=")"  matchgroup=replPrompt end="^\S\+>" contains=@replListCluster
+    syn region lispBQList           matchgroup=PreProc   start="`("   skip="|.\{-}|" end=")"  matchgroup=replPrompt end="^\S\+>" contains=@replListCluster
+
+endif
+
+    syn match   replPrompt /^\S\+>/
+    syn match   replPrompt /^(\S\+)>/
+    hi def link replPrompt Type
+endfunction
+
 " Open a new REPL buffer
 function! SlimvOpenReplBuffer()
     call SlimvOpenBuffer( g:slimv_repl_name )
     call b:SlimvInitRepl()
     call PareditInitBuffer()
-    if !g:slimv_repl_syntax
+    if g:slimv_repl_syntax
+        call SlimvSetSyntaxRepl()
+    else
         set syntax=
     endif
 
@@ -663,11 +743,14 @@ function! SlimvOpenReplBuffer()
     hi SlimvNormal term=none cterm=none gui=none
     hi SlimvCursor term=reverse cterm=reverse gui=reverse
 
-    " Add autocommands specific to the REPL buffer
-    execute "au FileChangedShell " . g:slimv_repl_name . " :call SlimvRefreshReplBuffer()"
-    execute "au FocusGained "      . g:slimv_repl_name . " :call SlimvRefreshReplBuffer()"
-    execute "au BufEnter "         . g:slimv_repl_name . " :call SlimvReplEnter()"
-    execute "au BufLeave "         . g:slimv_repl_name . " :call SlimvReplLeave()"
+    if !exists( 'b:au_bufenter_set' )
+        " Add autocommands specific to the REPL buffer
+        let b:au_bufenter_set = 1
+        execute "au FileChangedShell " . g:slimv_repl_name . " :call SlimvRefreshReplBuffer()"
+        execute "au FocusGained "      . g:slimv_repl_name . " :call SlimvRefreshReplBuffer()"
+        execute "au BufEnter "         . g:slimv_repl_name . " :call SlimvReplEnter()"
+        execute "au BufLeave "         . g:slimv_repl_name . " :call SlimvReplLeave()"
+    endif
 
     call SlimvRefreshReplBuffer()
 endfunction
@@ -712,13 +795,13 @@ function SlimvOpenSldbBuffer()
     " Add keybindings valid only for the SLDB buffer
     noremap  <buffer> <silent>        <CR>   :call SlimvHandleEnterSldb()<CR>
     if g:slimv_keybindings == 1
-        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'a      :call SlimvDebugCommand("swank_invoke_abort")<CR>'
-        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'q      :call SlimvDebugCommand("swank_throw_toplevel")<CR>'
-        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'n      :call SlimvDebugCommand("swank_invoke_continue")<CR>'
+        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'a      :call SlimvDebugAbort()<CR>'
+        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'q      :call SlimvDebugQuit()<CR>'
+        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'n      :call SlimvDebugContinue()<CR>'
     elseif g:slimv_keybindings == 2
-        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'da     :call SlimvDebugCommand("swank_invoke_abort")<CR>'
-        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'dq     :call SlimvDebugCommand("swank_throw_toplevel")<CR>'
-        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'dn     :call SlimvDebugCommand("swank_invoke_continue")<CR>'
+        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'da     :call SlimvDebugAbort()<CR>'
+        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'dq     :call SlimvDebugQuit()<CR>'
+        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'dn     :call SlimvDebugContinue()<CR>'
     endif
 
     " Set folding parameters
@@ -1464,6 +1547,26 @@ function! SlimvCloseForm()
     normal! %
 endfunction
 
+" Handle insert mode 'Tab' keypress by doing completion or indentation
+function! SlimvHandleTab()
+    if pumvisible()
+        " Completions menu is active, go to next match
+        return "\<C-N>"
+    endif
+    let c = col('.')
+    if c > 1 && getline('.')[c-2] =~ '\k'
+        " At the end of a keyword, bring up completions
+        return "\<C-X>\<C-O>"
+    endif
+    let indent = SlimvIndent(line('.')) + 1
+    if c < indent && getline('.') !~ '\S\+'
+        " We are left from the autoindent position, do an autoindent
+        return repeat(" ", indent-c)
+    endif
+    " No keyword to complete, no need for autoindent, just enter a <Tab>
+    return "\<Tab>"
+endfunction
+
 " Handle insert mode 'Backspace' keypress in the REPL buffer
 function! SlimvHandleBS()
     if line( "." ) == b:repl_prompt_line && col( "." ) <= b:repl_prompt_col
@@ -1553,9 +1656,12 @@ function! SlimvHandleEnterSldb()
                 " Display item-th frame
                 call SlimvMakeFold()
                 silent execute 'python swank_frame_locals("' . item . '")'
-                if g:slimv_impl != 'clisp'
-                    " These are not implemented for CLISP
+                if SlimvGetFiletype() != 'scheme' && g:slimv_impl != 'clisp'
+                    " Not implemented for CLISP or scheme
                     silent execute 'python swank_frame_source_loc("' . item . '")'
+                endif
+                if SlimvGetFiletype() == 'lisp' && g:slimv_impl != 'clisp'
+                    " Not implemented for CLISP or other lisp dialects
                     silent execute 'python swank_frame_call("' . item . '")'
                 endif
                 return
@@ -1637,19 +1743,41 @@ function! SlimvInterrupt()
 endfunction
 
 " Select a specific restart in debugger
-function! SlimvDebugCommand( cmd )
+function! SlimvDebugCommand( name, cmd )
     if SlimvConnectSwank()
         if s:sldb_level >= 0
             if bufname('%') != g:slimv_sldb_name
                 call SlimvOpenSldbBuffer()
             endif
-            call SlimvQuitSldb()
             call SlimvCommand( 'python ' . a:cmd . '()' )
             call SlimvRefreshReplBuffer()
+            if s:sldb_level < 0
+                " Swank exited the debugger
+                if bufname('%') != g:slimv_sldb_name
+                    call SlimvOpenSldbBuffer()
+                endif
+                call SlimvQuitSldb()
+                call SlimvRestoreFocus()
+            else
+                echomsg 'Debugger re-activated by the SWANK server.'
+            endif
         else
             call SlimvError( "Debugger is not activated." )
         endif
     endif
+endfunction
+
+" Various debugger restarts
+function! SlimvDebugAbort()
+    call SlimvDebugCommand( ":sldb-abort", "swank_invoke_abort" )
+endfunction
+
+function! SlimvDebugQuit()
+    call SlimvDebugCommand( ":throw-to-toplevel", "swank_throw_toplevel" )
+endfunction
+
+function! SlimvDebugContinue()
+    call SlimvDebugCommand( ":sldb-continue", "swank_invoke_continue" )
 endfunction
 
 " List current Lisp threads
@@ -1749,6 +1877,8 @@ function! SlimvConnectServer()
     if s:swank_connected
         python swank_disconnect()
         let s:swank_connected = 0
+	" Give swank server some time for disconnecting
+        sleep 500m
     endif 
     call SlimvBeginUpdate()
     if SlimvConnectSwank()
@@ -1806,6 +1936,11 @@ function! SlimvEvalRegion() range
         let lines = [reg . ending]
     endif
     if lines != []
+        if SlimvGetFiletype() == 'scheme'
+            " Swank-scheme requires us to pass a single s-expression
+            " so embed buffer lines in a (begin ...) block
+            let lines = ['(begin'] + lines + [')']
+        endif
         call SlimvEval( lines )
     endif
 endfunction
@@ -1883,6 +2018,11 @@ endfunction
 " Evaluate the whole buffer
 function! SlimvEvalBuffer()
     let lines = getline( 1, '$' )
+    if SlimvGetFiletype() == 'scheme'
+        " Swank-scheme requires us to pass a single s-expression
+        " so embed buffer lines in a (begin ...) block
+        let lines = ['(begin'] + lines + [')']
+    endif
     call SlimvEval( lines )
 endfunction
 
@@ -2545,9 +2685,12 @@ function! SlimvInitBuffer()
     " Map space to display function argument list in status line
     inoremap <silent> <buffer> <Space>    <Space><C-R>=SlimvArglist()<CR>
     "noremap  <silent> <buffer> <C-C>      :call SlimvInterrupt()<CR>
-    au InsertLeave * :let &showmode=s:save_showmode
+    if !exists( 'b:au_insertleave_set' )
+        let b:au_insertleave_set = 1
+        au InsertLeave * :let &showmode=s:save_showmode
+    endif
     inoremap <silent> <buffer> <C-X>0     <C-O>:call SlimvCloseForm()<CR>
-    inoremap <silent> <buffer> <Tab>      <C-R>=pumvisible() ? "\<lt>C-N>" : "\<lt>C-X>\<lt>C-O>"<CR>
+    inoremap <silent> <buffer> <Tab>      <C-R>=SlimvHandleTab()<CR>
 
     " Setup balloonexp to display symbol description
     if g:slimv_balloon && has( 'balloon_eval' )
@@ -2581,9 +2724,9 @@ call s:MenuMap( 'Slim&v.De&bugging.Set-&Breakpoint',            g:slimv_leader.'
 call s:MenuMap( 'Slim&v.De&bugging.Disassemb&le\.\.\.',         g:slimv_leader.'l',  g:slimv_leader.'dd',  ':call SlimvDisassemble()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Inspect\.\.\.',             g:slimv_leader.'i',  g:slimv_leader.'di',  ':call SlimvInspect()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.-SldbSep-',                  '',                  '',                   ':' )
-call s:MenuMap( 'Slim&v.De&bugging.&Abort',                     g:slimv_leader.'a',  g:slimv_leader.'da',  ':call SlimvDebugCommand("swank_invoke_abort")<CR>' )
-call s:MenuMap( 'Slim&v.De&bugging.&Quit-to-Toplevel',          g:slimv_leader.'q',  g:slimv_leader.'dq',  ':call SlimvDebugCommand("swank_throw_toplevel")<CR>' )
-call s:MenuMap( 'Slim&v.De&bugging.&Continue',                  g:slimv_leader.'n',  g:slimv_leader.'dc',  ':call SlimvDebugCommand("swank_invoke_continue")<CR>' )
+call s:MenuMap( 'Slim&v.De&bugging.&Abort',                     g:slimv_leader.'a',  g:slimv_leader.'da',  ':call SlimvDebugAbort()<CR>' )
+call s:MenuMap( 'Slim&v.De&bugging.&Quit-to-Toplevel',          g:slimv_leader.'q',  g:slimv_leader.'dq',  ':call SlimvDebugQuit()<CR>' )
+call s:MenuMap( 'Slim&v.De&bugging.&Continue',                  g:slimv_leader.'n',  g:slimv_leader.'dc',  ':call SlimvDebugContinue()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.-ThreadSep-',                '',                  '',                   ':' )
 call s:MenuMap( 'Slim&v.De&bugging.List-T&hreads',              g:slimv_leader.'H',  g:slimv_leader.'dl',  ':call SlimvListThreads()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Kill-Thread\.\.\.',         g:slimv_leader.'K',  g:slimv_leader.'dk',  ':call SlimvKillThread()<CR>' )

@@ -1,7 +1,7 @@
-*slimv.txt*                    Slimv                 Last Change: 10 Mar 2012
+*slimv.txt*                    Slimv                 Last Change: 31 Mar 2012
 
 Slimv                                                                  *slimv*
-                               Version 0.9.5
+                               Version 0.9.6
 
 The Superior Lisp Interaction Mode for Vim.
 This plugin is aimed to help Lisp development by interfacing between Vim and
@@ -123,6 +123,8 @@ The list below contains an alphabetical collection of Slimv options.
 Below that list follows the detailed explanation on each option.
 For the Paredit options please visit |paredit-options|.
 For the Swank options plese visit |swank-configuration|.
+
+|g:scheme_builtin_swank|     Enable MIT scheme's built-in swank server.
 
 |g:slimv_balloon|            Specifies if tooltips are on.
 
@@ -358,6 +360,15 @@ of GNU screen for the same purpose.
 The SWANK server is connected to port 4005 by default. This can be changed
 using the g:swank_port option.
 
+                                                       *g:scheme_builtin_swank*
+
+Since version 9.1.1 MIT scheme has a built-in swank server that can replace
+contrib/swank-mit-scheme.scm coming with Slime. This option enables the
+built-in swank server.
+Please be aware that this is still experimental, so it is not enabled by
+default. Using it may result in strange errors, but in other areas it also
+may be superior to swank-mit-scheme.scm and it is actively maintained.
+
                                                               *g:slimv_timeout*
 There is a 20 second timeout defined for starting up or connecting to the
 SWANK server. This timeout can be changed via the g:slimv_timeout option.
@@ -479,15 +490,15 @@ state. The default value for this option is 0, meaning that the number of lines
 is unlimited, i.e. no line is ever erased.
 
                                                           *g:slimv_repl_syntax*
-Enables syntax highlighting for the REPL buffer. Switched off by default for
-two reasons:
-  1. The REPL buffer also contains the REPL output, which is generally not
-     related to s-expressions, therefore may confuse syntax coloring.
+Enables syntax highlighting for the REPL buffer. It is enabled by default but
+one may want to switch it off for these reasons:
+  1. The REPL buffer contains s-expressions and their output mixed. The REPL
+     output is generally not related to s-expressions, therefore may confuse
+     syntax coloring.
   2. REPL output may contain very long lines, which significantly slows down
-     syntax coloring in Vim. If you really want to enable syntax highlighting
-     for the REPL buffer, then it is recommended to adjust the |synmaxcol|
-     parameter to a relatively low value in order to increase syntax coloring
-     speed.
+     syntax coloring in Vim. If you don't want to switch REPL syntax coloring
+     completely off then it is recommended to adjust the |synmaxcol| parameter
+     to a relatively low value to increase syntax coloring speed.
 
                                                             *g:slimv_repl_wrap*
 Set wrap mode for the REPL buffer, which means the lines longer than the
@@ -1389,6 +1400,24 @@ FAQ                                                                 *slimv-faq*
 
 ===============================================================================
 CHANGE LOG                                                    *slimv-changelog*
+
+0.9.6  - Perform indenting when <Tab> pressed on whitespace.
+       - Added support for newer swank message length counting in bytes.
+       - Updated Lisp swank server to version 2012-03-06.
+       - Updated Clojure API reference to version 1.3.
+       - Identify .cljs files as Clojure type.
+       - Enable g:slimv_repl_syntax by default.
+       - Restart parenthesis highlighting at each REPL prompt.
+       - Scheme: eval buffer and region in a (begin ...) block.
+       - Added option g:scheme_builtin_swank for enabling MIT scheme's built-in
+         swank server.
+       - Added syntax highlight for Scheme quoted symbol.
+       - Keep SLDB buffer if swank stays in debugger upon selecting a restart.
+       - When reconnecting the swank server wait for disconnection first.
+       - Fixed REPL buffer slowdown caused by re-assigning autocommands.
+       - Fixed detection of string and comment when no syntax loaded.
+       - Fixed Scheme syntax highlight problems in the REPL buffer.
+       - Call :frame-source-location and :frame-call only if swank supports them.
 
 0.9.5  - Use correct SLDB level when invoking restart.
        - Autodetect tmux session on Linux (thanks to Brett Kosinski).
