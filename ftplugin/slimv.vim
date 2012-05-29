@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.9.6
-" Last Change:  27 Mar 2012
+" Version:      0.9.7
+" Last Change:  15 May 2012
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -290,7 +290,8 @@ let s:current_buf = -1                                    " Swank action was req
 let s:current_win = -1                                    " Swank action was requested from this window
 let s:skip_sc = 'synIDattr(synID(line("."), col("."), 0), "name") =~ "[Ss]tring\\|[Cc]omment"'
                                                           " Skip matches inside string or comment 
-let s:frame_def = '^\s\{0,2}\d\{1,3}:'                    " Regular expression to match SLDB restart or frame identifier
+let s:skip_q = 'getline(".")[col(".")-2] == "\\"'         " Skip escaped double quote characters in matches
+let s:frame_def = '^\s\{0,2}\d\{1,}:'                     " Regular expression to match SLDB restart or frame identifier
 let s:spec_indent = 'flet\|labels\|macrolet\|symbol-macrolet'
                                                           " List of symbols need special indenting
 let s:spec_param = 'defmacro'                             " List of symbols with special parameter list
@@ -329,12 +330,19 @@ function! SlimvShortEcho( msg )
     let &shortmess=saved
 endfunction
 
+" Go to the end of buffer, make sure the cursor is positioned
+" after the last character of the buffer when in insert mode
+function s:EndOfBuffer()
+    normal! G$
+    call cursor( line('$'), 99999 )
+endfunction
+
 " Position the cursor at the end of the REPL buffer
 " Optionally mark this position in Vim mark 's'
 function! SlimvEndOfReplBuffer()
     if line( '.' ) >= b:repl_prompt_line - 1
         " Go to the end of file only if the user did not move up from here
-        normal! G$
+        call s:EndOfBuffer()
     endif
 endfunction
 
@@ -506,10 +514,10 @@ endfunction
 function! SlimvTimer()
     call SlimvRefreshReplBuffer()
     if mode() == 'i' || mode() == 'I' || mode() == 'r' || mode() == 'R'
-        " Put '<Insert>' twice into the typeahead buffer, which should not do anything
-        " just switch to replace/insert mode then back to insert/replace mode
-        " But don't do this for readonly buffers
         if bufname('%') != g:slimv_sldb_name && bufname('%') != g:slimv_inspect_name && bufname('%') != g:slimv_threads_name
+            " Put '<Insert>' twice into the typeahead buffer, which should not do anything
+            " just switch to replace/insert mode then back to insert/replace mode
+            " But don't do this for readonly buffers
             call feedkeys("\<insert>\<insert>")
         endif
     else
@@ -770,7 +778,7 @@ function SlimvOpenInspectBuffer()
 
     syn match Type /^\[\d\+\]/
     syn match Type /^\[<<\]/
-    syn match Type /^\[--more--\]$/
+    syn match Type /^\[--....--\]$/
 endfunction
 
 " Open a new Threads buffer
@@ -960,8 +968,9 @@ function! SlimvSelectForm()
         normal! l
         let c = c + 1
     endwhile
+    normal! va(
     let p1 = getpos('.')
-    normal! va(o
+    normal! o
     let p2 = getpos('.')
     if firstchar != '(' && p1[1] == p2[1] && (p1[2] == p2[2] || p1[2] == p2[2]+1)
         " Empty selection and no paren found, select current word instead
@@ -990,7 +999,7 @@ endfunction
 " Find starting '(' of a top level form
 function! SlimvFindDefunStart()
     let l = line( '.' )
-    let matchb = max( [l-100, 1] )
+    let matchb = max( [l-200, 1] )
     while searchpair( '(', '', ')', 'bW', s:skip_sc, matchb )
     endwhile
 endfunction
@@ -1056,20 +1065,8 @@ endfunction
 function! SlimvConnectSwank()
     if !s:python_initialized
         if ! has('python')
-            call SlimvErrorWait( 'Vim is compiled without the Python feature. Unable to run SWANK client.' )
+            call SlimvErrorWait( 'Vim is compiled without the Python feature or Python is not installed. Unable to run SWANK client.' )
             return 0
-        endif
-        if g:slimv_windows || g:slimv_cygwin
-            " Verify that Vim is compiled with Python and Python is properly installed
-            let v = ''
-            redir => v
-            silent ver
-            redir END
-            let pydll = matchstr( v, '\cpython..\.dll' )
-            if ! executable( pydll )
-                call SlimvErrorWait( pydll . ' not found. Unable to run SWANK client.' )
-                return 0
-            endif
         endif
         python import vim
         execute 'pyfile ' . g:swank_path
@@ -1111,6 +1108,10 @@ function! SlimvConnectSwank()
         while s:swank_version == '' && localtime()-starttime < g:slimv_timeout
             call SlimvSwankResponse()
         endwhile
+        if s:swank_version >= '2011-12-04'
+            python swank_require('swank-repl')
+            call SlimvSwankResponse()
+        endif
         if s:swank_version >= '2008-12-23'
             call SlimvCommandGetResponse( ':create-repl', 'python swank_create_repl()', g:slimv_timeout )
         endif
@@ -1293,6 +1294,69 @@ function! s:CloseForm( lines )
     return end
 endfunction
 
+" Some multi-byte characters screw up the built-in lispindent()
+" This function is a wrapper that tries to fix it
+" TODO: implement custom indent procedure and omit lispindent()
+function SlimvLispindent( lnum )
+    set lisp
+    let li = lispindent( a:lnum )
+    set nolisp
+    let backline = max([a:lnum-g:slimv_indent_maxlines, 1])
+    let oldpos = winsaveview()
+    normal! 0
+    " Find containing form
+    let [lhead, chead] = searchpairpos( '(', '', ')', 'bW', s:skip_sc, backline )
+    if lhead == 0
+        " No containing form, lispindent() is OK
+        call winrestview( oldpos )
+        return li
+    endif
+    " Find outer form
+    let [lparent, cparent] = searchpairpos( '(', '', ')', 'bW', s:skip_sc, backline )
+    call winrestview( oldpos )
+    if lparent == 0 || lhead != lparent
+        " No outer form or starting above inner form, lispindent() is OK
+        return li
+    endif
+    " Count extra bytes before the function header
+    let header = strpart( getline( lparent ), 0 )
+    let total_extra = 0
+    let extra = 0
+    let c = 0
+    while a:lnum > 0 && c < chead-1
+        let bytes = byteidx( header, c+1 ) - byteidx( header, c )
+        if bytes > 1
+            let total_extra = total_extra + bytes - 1
+            if c >= cparent && extra < 10
+                " Extra bytes in the outer function header
+                let extra = extra + bytes - 1
+            endif
+        endif
+        let c = c + 1
+    endwhile
+    if total_extra == 0  
+        " No multi-byte character, lispindent() is OK
+        return li
+    endif
+    " In some cases ending spaces add up to lispindent() if there are multi-byte characters
+    let ending_sp = len( matchstr( getline( lparent ), ' *$' ) )
+    " Determine how wrong lispindent() is based on the number of extra bytes
+    " These values were determined empirically
+    if lparent == a:lnum - 1
+        " Function header is in the previous line
+        if extra == 0 && total_extra > 1
+            let ending_sp = ending_sp + 1
+        endif
+        return li + [0, 1, 0, -3, -3, -3, -5, -5, -7, -7, -8][extra] - ending_sp
+    else
+        " Function header is in an upper line
+        if extra == 0 || total_extra == extra
+            let ending_sp = 0
+        endif
+        return li + [0, 1, 0, -2, -2, -3, -3, -3, -3, -3, -3][extra] - ending_sp
+    endif
+endfunction
+
 " Return Lisp source code indentation at the given line
 function! SlimvIndent( lnum )
     if a:lnum <= 1
@@ -1304,12 +1368,49 @@ function! SlimvIndent( lnum )
         " Hit the start of the file, use zero indent.
         return 0
     endif
+    let oldpos = winsaveview()
+    let linenum = a:lnum
+
+    " Handle multi-line string
+    let plen = len( getline( pnum ) )
+    if synIDattr( synID( pnum, plen, 0), 'name' ) =~ '[Ss]tring' && getline(pnum)[plen-1] != '"'
+        " Previous non-blank line ends with an unclosed string, so this is a multi-line string
+        let [l, c] = searchpairpos( '"', '', '"', 'bnW', s:skip_q )
+        if l == pnum && c > 0
+            " Indent to the opening double quote (if found)
+            return c
+        else
+            return SlimvLispindent( linenum )
+        endif
+    endif
+    if synIDattr( synID( pnum, 1, 0), 'name' ) =~ '[Ss]tring' && getline(pnum)[0] != '"'
+        " Previous non-blank line is the last line of a multi-line string
+        call cursor( pnum, 1 )
+        " First find the end of the multi-line string (omit \" characters)
+        let [lend, cend] = searchpos( '[^\\]"', 'nW' )
+        if lend > 0 && strpart(getline(lend), cend+1) =~ '(\|)\|\[\|\]\|{\|}'
+            " Structural change after the string, no special handling
+        else
+            " Find the start of the multi-line string (omit \" characters)
+            let [l, c] = searchpairpos( '"', '', '"', 'bnW', s:skip_q )
+            if l > 0 && strpart(getline(l), 0, c-1) =~ '^\s*$'
+                " Nothing else before the string: indent to the opening "
+                call winrestview( oldpos )
+                return c - 1
+            endif
+            if l > 0
+                " Pretend that we are really after the first line of the multi-line string
+                let pnum = l
+                let linenum = l + 1
+            endif
+        endif
+        call winrestview( oldpos )
+    endif
 
     " Handle special indentation style for flet, labels, etc.
     " When searching for containing forms, don't go back
     " more than g:slimv_indent_maxlines lines.
     let backline = max([pnum-g:slimv_indent_maxlines, 1])
-    let oldpos = winsaveview()
     let indent_keylists = g:slimv_indent_keylists
     " Find beginning of the innermost containing form
     normal! 0
@@ -1390,9 +1491,10 @@ function! SlimvIndent( lnum )
                 endif
             endif
         endif
-        " Restore all cursor movements
-        call winrestview( oldpos )
     endif
+
+    " Restore all cursor movements
+    call winrestview( oldpos )
 
     " Check if the current form started in the previous nonblank line
     if l == pnum
@@ -1448,11 +1550,9 @@ function! SlimvIndent( lnum )
         endif
     endif
 
-    " Use default Lisp indening
-    set lisp
-    let li = lispindent(a:lnum)
-    set nolisp
-    let line = strpart( getline(a:lnum-1), li-1 )
+    " Use default Lisp indenting
+    let li = SlimvLispindent(linenum)
+    let line = strpart( getline(linenum-1), li-1 )
     let gap = matchend( line, '^(\s\+\S' )
     if gap >= 0
         " Align to the gap between the opening paren and the first atom
@@ -1689,10 +1789,38 @@ function! SlimvHandleEnterInspect()
     endif
 
     if line[0] == '['
-        if line =~ '^[--more--\]$'
+        if line =~ '^\[--more--\]$'
             " More data follows, fetch next part
             call SlimvCommand( 'python swank_inspector_range()' )
             call SlimvRefreshReplBuffer()
+            return
+        elseif line =~ '^\[--all---\]$'
+            " More data follows, fetch all parts
+            echon "\rFetching all entries, please wait..."
+            let b:inspect_more = -1
+            call SlimvCommand( 'python swank_inspector_range()' )
+            call SlimvRefreshReplBuffer()
+            let starttime = localtime()
+            while b:inspect_more < 0 && localtime()-starttime < g:slimv_timeout
+                " Wait for the first swank_inspector_range() call to finish
+                call SlimvRefreshReplBuffer()
+            endwhile
+            let starttime = localtime()
+            while b:inspect_more > 0 && localtime()-starttime < g:slimv_timeout
+                " There are more parts to fetch (1 entry is usually 4 parts)
+                echon "\rFetching all entries, please wait [" . (b:inspect_more / 4) . "]"
+                call SlimvCommand( 'python swank_inspector_range()' )
+                call SlimvRefreshReplBuffer()
+                if getchar(1)
+                    " User is impatient, stop fetching
+                    break
+                endif
+            endwhile
+            if b:inspect_more > 0
+                echon "\rFetch exhausted. Select [--all---] to resume."
+            else
+                echon "\rSuccessfully fetched all entries."
+            endif
             return
         elseif line[0:3] == '[<<]'
             " Pop back up in the inspector
@@ -1839,7 +1967,7 @@ function! SlimvArglist()
         let save_ve = &virtualedit
         set virtualedit=onemore
         " Display only if entering the first space after a keyword
-        let matchb = max( [l-100, 1] )
+        let matchb = max( [l-200, 1] )
         let [l0, c0] = searchpairpos( '(', '', ')', 'nbW', s:skip_sc, matchb )
         if l0 > 0
             " Found opening paren, let's find out the function name
@@ -1960,7 +2088,7 @@ function! SlimvEvalSelection( outreg, testform )
     endif
     if bufnr( "%" ) == bufnr( g:slimv_repl_name )
         " If this is the REPL buffer then go to EOF
-        normal! G$
+        call s:EndOfBuffer()
     endif
     call SlimvEval( lines )
 endfunction
@@ -2107,7 +2235,7 @@ function! SlimvMacroexpand()
         let s:swank_form = SlimvGetSelection()
         if bufnr( "%" ) == bufnr( g:slimv_repl_name )
             " If this is the REPL buffer then go to EOF
-            normal! G$
+            call s:EndOfBuffer()
         endif
         call SlimvCommandUsePackage( 'python swank_macroexpand("s:swank_form")' )
     endif
@@ -2123,7 +2251,7 @@ function! SlimvMacroexpandAll()
         let s:swank_form = SlimvGetSelection()
         if bufnr( "%" ) == bufnr( g:slimv_repl_name )
             " If this is the REPL buffer then go to EOF
-            normal! G$
+            call s:EndOfBuffer()
         endif
         call SlimvCommandUsePackage( 'python swank_macroexpand_all("s:swank_form")' )
     endif

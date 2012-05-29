@@ -1,7 +1,7 @@
-*slimv.txt*                    Slimv                 Last Change: 31 Mar 2012
+*slimv.txt*                    Slimv                 Last Change: 29 May 2012
 
 Slimv                                                                  *slimv*
-                               Version 0.9.6
+                               Version 0.9.7
 
 The Superior Lisp Interaction Mode for Vim.
 This plugin is aimed to help Lisp development by interfacing between Vim and
@@ -903,9 +903,12 @@ then Slimv exits the Inspector.
 Pressing <Leader>q also exits the Inspector.
 
 If the object is too big to be fully displayed, this is signaled by the
-[--more--] text. When pressing Enter on the line containing [--more--] then
-the next part of the inspected object is queried from the swank server and
-displayed in the Inspect buffer.
+[--more--] and [--all---] texts. When pressing Enter on the line containing
+[--more--] then the next part of the inspected object is queried from the
+swank server and displayed in the Inspect buffer.
+When pressing Enter on the [--all---] line then all parts of the inspected
+object are fetched recursively up to the timeout defined by |g:slimv_timeout|.
+Pressing <Esc> stops the recursive fetching process.
 
 
 If debugger is activated and the cursor is placed on a frame line in the
@@ -1356,6 +1359,12 @@ FAQ                                                                 *slimv-faq*
      It is also possible to save a log of the communication between Slimv and
      the swank server by setting g:swank_log=1 in the .vimrc.
 
+- Q: I get SLDB error messages related to some contributed modules of Slime, e.g.
+     "The loaded code expects an incompatible layout for class SB-PRETTY:PRETTY-STREAM."
+- A: Some contribs are known to be incompatible with some other Lisp
+     packages. Try to disable contribs in slime/start-swank.lisp by setting
+     :load-contribs to 'nil'.
+
 - Q: Why is SLIME functionality XYZ missing from Slimv?
 - A: Not all SLIME functions are implemented in the SWANK client, however
      the list of these functions keep growing.  Maybe future releases will
@@ -1400,6 +1409,25 @@ FAQ                                                                 *slimv-faq*
 
 ===============================================================================
 CHANGE LOG                                                    *slimv-changelog*
+
+0.9.7  - Keep cursor position on expanding [--more--] in the Inspector.
+       - Added [--all---] to Inspector for fetching all parts.
+       - Don't explicitly check for pythonXX.dll, rely on has('python').
+       - Require 'swank-repl' for slime version above 2011-12-04 in case
+         contribs are disabled.
+       - Identify VimClojure REPL prompt position for paredit (thanks to
+         David Greenberg).
+       - Paredit: added <leader><Up> for Splice-killing-backward,
+         <leader><Down> for Splice-killing-forward, <leader>I for Raise.
+       - Paredit: added 'Electric Return' feature and new option
+         g:paredit_electric_return.
+       - Increased the distance to search for the defun start to 200 lines.
+       - Bugfix: positioning the cursor at the end of REPL prompt in insert mode.
+       - Bugfix: handle restart/frame number above 999 (thanks to Philipp Marek).
+       - Bugfix: form selection when cursor is next to the opening paren.
+       - Bugfix: indentation of multi-line strings.
+       - Bugfix: indentation of lines with multi-byte characters.
+       - Bugfix: cursor movement while indenting.
 
 0.9.6  - Perform indenting when <Tab> pressed on whitespace.
        - Added support for newer swank message length counting in bytes.
@@ -1886,8 +1914,8 @@ Also thanks to Vlad Hanciuta, Marcin Fatyga, Dmitry Petukhov,
 Daniel Solano Gómez, Brian Kropf, Len Weincier, Andreas Salwasser,
 Jon Thacker, Andrew Hills, Jerome Baum, John Obbele, Andreas Fredriksson,
 Ömer Sinan Agacan, Tobias Pflug, Chris Cahoon, Mats Rauhala, Oleg Terenchuk,
-Andrew Lyon, Andrew Smirnoff, Brett Kosinski for additional notes and
-contributions.
+Andrew Lyon, Andrew Smirnoff, Brett Kosinski, David Greenberg for additional
+notes and contributions.
 
 I would also like to say a big thank you to everyone donating to support
 development. This is a one-element list at the moment: :)
