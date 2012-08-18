@@ -1,7 +1,7 @@
-*slimv.txt*                    Slimv                 Last Change: 29 May 2012
+*slimv.txt*                    Slimv                 Last Change: 18 Aug 2012
 
 Slimv                                                                  *slimv*
-                               Version 0.9.7
+                               Version 0.9.8
 
 The Superior Lisp Interaction Mode for Vim.
 This plugin is aimed to help Lisp development by interfacing between Vim and
@@ -187,6 +187,8 @@ For the Swank options plese visit |swank-configuration|.
 |g:slimv_repl_max_len|       Maximum number of lines in the REPL buffer.
 
 |g:slimv_repl_name|          Name of the REPL buffer.
+
+|g:slimv_repl_simple_eval|   <CR> evaluates form in the REPL buffer.
 
 |g:slimv_repl_split|         Open the Lisp REPL buffer in a split window
                              or in a separate buffer.
@@ -489,6 +491,24 @@ parens and/or double quotes may remain in order to maintain their balanced
 state. The default value for this option is 0, meaning that the number of lines
 is unlimited, i.e. no line is ever erased.
 
+                                                     *g:slimv_repl_simple_eval*
+This option controls the behaviour of insert mode <CR>, <Up>, <Down> in the
+REPL buffer.
+
+If nonzero then:
+    <CR>       Evaluates the form entered in the command line
+    <Up>       Brings up the previous command from the command line history
+    <Down>     Brings up the next command from the command line history
+    <C-CR>     Closes and evaluates the form entered in the command line
+
+If the option is zero then:
+    <C-CR>     Closes and evaluates the form entered in the command line
+    <C-Up>     Brings up the previous command from the command line history
+    <C-Down>   Brings up the next command from the command line history
+    <CR>       Inserts a newline
+    <Up>       Moves the cursor up
+    <Down>     Moves the cursor down
+
                                                           *g:slimv_repl_syntax*
 Enables syntax highlighting for the REPL buffer. It is enabled by default but
 one may want to switch it off for these reasons:
@@ -689,7 +709,7 @@ sequence, then you may want to fine tune these Vim options:
     <C-C>   <C-C>    Interrupt Lisp Process
     ,<Up>   ,rp      Previous Input
     ,<Down> ,rn      Next Input
-    ,z      ,rr      Refresh REPL Buffer
+    ,-      ,rc      Clear REPL
 
 Note:
 Some mappings accept an optional "x prefix (where x is a register name)
@@ -1083,6 +1103,9 @@ Insert Mode:
     <Down>         Brings up the next command typed and sent to the Lisp REPL
                    when in the command line.
 
+Please note that the behaviour of <CR>, <Up>, <Down> is affected by the value
+of option |g:slimv_repl_simple_eval|.
+
 
 ===============================================================================
 CLOJURE SUPPORT                                                 *slimv-clojure*
@@ -1409,6 +1432,35 @@ FAQ                                                                 *slimv-faq*
 
 ===============================================================================
 CHANGE LOG                                                    *slimv-changelog*
+
+0.9.8  - Added autodetection for 'ccl'.
+       - Delete empty lines when re-gathering Electric Returns.
+       - Inspector: put multiple items in one line (like in Slime).
+       - Inspector: highlight selectable parts and actions, hide item id-s.
+       - Inspector: display "path" of inspected object.
+       - Don't extend s-expression with prefix when macroexpanding.
+       - Don't evaluate or compile the REPL buffer.
+       - Added device to the path when loading pretty printer patches for SBCL
+         (thanks to Andrew Lyon).
+       - Added option g:slimv_repl_simple_eval and Electric Return for REPL buffer.
+       - Print arglist when pressing Space after closing parens or double quotes,
+         also when pressing Enter.
+       - Added "Clear REPL" entry to the REPL menu (mapped to <Leader>-).
+       - Paredit: special handling of cw, cb, ciw, caw supporting repeat ('.').
+       - Do not describe empty symbol.
+       - Prefer selecting symbol to the left when cursor is on whitespace.
+       - Added "." character to iskeyword for Lisp.
+       - Removed "." when selecting symbol for completion for Clojure.
+       - Increased fuzzy completion limit.
+       - Bugfix: find package/namespace when current form is in a fold.
+       - Bugfix: PareditToggle ckecks if buffer was registered for Paredit.
+       - Bugfix: Electric Return re-gathering at end of line with no virtualedit.
+       - Bugfix: extra character at the end of selection using 'v('
+       - Bugfix: garbage upon pressing ')' or Enter in completion popup.
+       - Bugfix: Paredit 'x' at end of line when 'whichwrap' includes h,l.
+       - Bugfix: arglist sometimes not displayed.
+       - Bugfix: Paredit Wrap when line ends in a multibyte character
+         (thanks to Sung Pae).
 
 0.9.7  - Keep cursor position on expanding [--more--] in the Inspector.
        - Added [--all---] to Inspector for fetching all parts.
@@ -1914,8 +1966,8 @@ Also thanks to Vlad Hanciuta, Marcin Fatyga, Dmitry Petukhov,
 Daniel Solano Gómez, Brian Kropf, Len Weincier, Andreas Salwasser,
 Jon Thacker, Andrew Hills, Jerome Baum, John Obbele, Andreas Fredriksson,
 Ömer Sinan Agacan, Tobias Pflug, Chris Cahoon, Mats Rauhala, Oleg Terenchuk,
-Andrew Lyon, Andrew Smirnoff, Brett Kosinski, David Greenberg for additional
-notes and contributions.
+Andrew Lyon, Andrew Smirnoff, Brett Kosinski, David Greenberg, Sung Pae
+for additional notes and contributions.
 
 I would also like to say a big thank you to everyone donating to support
 development. This is a one-element list at the moment: :)
