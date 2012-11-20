@@ -4,8 +4,8 @@
 #
 # SWANK client for Slimv
 # swank.py:     SWANK client code for slimv.vim plugin
-# Version:      0.9.8
-# Last Change:  30 Jun 2012
+# Version:      0.9.9
+# Last Change:  07 Nov 2012
 # Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 # License:      This file is placed in the public domain.
 #               No warranty, express or implied.
@@ -14,7 +14,6 @@
 ############################################################################### 
 
 
-import sys
 import socket
 import time
 import select
@@ -43,7 +42,9 @@ package         = 'COMMON-LISP-USER' # Current package
 actions         = dict()        # Swank actions (like ':write-string'), by message id
 indent_info     = dict()        # Data of :indentation-update
 frame_locals    = dict()        # Map frame variable names to their index
-inspect_content = []            # Partial content of the last Inspect command
+inspect_lines   = 0             # Number of lines in the Inspector (excluding help text)
+inspect_newline = True          # Start a new line in the Inspector (for multi-part objects)
+inspect_package = ''            # Package used for the current Inspector
 
 
 ###############################################################################
@@ -295,7 +296,7 @@ def swank_send(text):
     try:
         sock.send(t)
     except socket.error:
-        sys.stdout.write( 'Socket error when sending to SWANK server.\n' )
+        vim.command("let s:swank_result='Socket error when sending to SWANK server.\n'")
         swank_disconnect()
 
 def swank_recv_len(timeout):
@@ -310,7 +311,7 @@ def swank_recv_len(timeout):
         try:
             data = sock.recv(l)
         except socket.error:
-            sys.stdout.write( 'Socket error when receiving from SWANK server.\n' )
+            vim.command("let s:swank_result='Socket error when receiving from SWANK server.\n'")
             swank_disconnect()
             return rec
         while data and len(rec) < lenbytes:
@@ -320,7 +321,7 @@ def swank_recv_len(timeout):
                 try:
                     data = sock.recv(l)
                 except socket.error:
-                    sys.stdout.write( 'Socket error when receiving from SWANK server.\n' )
+                    vim.command("let s:swank_result='Socket error when receiving from SWANK server.\n'")
                     swank_disconnect()
                     return rec
     return rec
@@ -347,11 +348,11 @@ def swank_recv(msglen, timeout):
                 try:
                     data = sock.recv(needed)
                 except socket.error:
-                    sys.stdout.write( 'Socket error when receiving from SWANK server.\n' )
+                    vim.command("let s:swank_result='Socket error when receiving from SWANK server.\n'")
                     swank_disconnect()
                     return rec
                 if len(data) == 0:
-                    sys.stdout.write( 'Socket error when receiving from SWANK server.\n' )
+                    vim.command("let s:swank_result='Socket error when receiving from SWANK server.\n'")
                     swank_disconnect()
                     return rec
                 rec = rec + data
@@ -361,56 +362,49 @@ def swank_parse_inspect_content(pcont):
     """
     Parse the swank inspector content
     """
-    global inspect_content
+    global inspect_lines
+    global inspect_newline
 
-    vim.command('let oldpos=winsaveview()')
+    if type(pcont[0]) != list:
+        return
     buf = vim.current.buffer
-    # First 2 lines are filled in swank_parse_inspect()
-    buf[2:] = []
-    if type(pcont[0]) == list:
-        inspect_content = inspect_content + pcont[0]  # Append to the previous content
+    help_lines = int( vim.eval('exists("b:help_shown") ? len(b:help) : 1') )
+    pos = help_lines + inspect_lines
+    buf[pos:] = []
     istate = pcont[1]
     start  = pcont[2]
     end    = pcont[3]
     lst = []
-    linestart = 0
-    for el in inspect_content:
+    for el in pcont[0]:
         logprint(str(el))
+        newline = False
         if type(el) == list:
             if el[0] == ':action':
-                item = '{<' + unquote(el[2]) + '>'
-                tail = '<>}'
+                text = '{<' + unquote(el[2]) + '>' + unquote(el[1]) + '<>}'
             else:
-                item = '{[' + unquote(el[2]) + ']'
-                tail = '[]}'
-            lst.insert(len(lst), item)
-            linestart = -1
-            text = unquote(el[1])
-            lst.append(text + tail)
+                text = '{[' + unquote(el[2]) + ']' + unquote(el[1]) + '[]}'
+            lst.append(text)
         else:
             text = unquote(el)
             lst.append(text)
             if text == "\n":
-                linestart = len(lst)
+                newline = True
+    lines = "".join(lst).split("\n")
+    if inspect_newline or pos > len(buf):
+        buf.append(lines)
+    else:
+        buf[pos-1] = buf[pos-1] + lines[0]
+        buf.append(lines[1:])
+    inspect_lines = len(buf) - help_lines
+    inspect_newline = newline
     if int(istate) > int(end):
         # Swank returns end+1000 if there are more entries to request
-        if linestart >= 0 and linestart < len(lst) and (len(lst[linestart]) == 0 or lst[linestart][0] != '['):
-            lst[linestart:] = "[--more--]"
-        else:
-            lst.append("\n[--more--]")
-        lst.append("\n[--all---]")
-    buf = vim.current.buffer
-    buf.append([''])
-    buf.append("".join(lst).split("\n"))
+        buf.append(['', "[--more--]", "[--all---]"])
     inspect_path = vim.eval('s:inspect_path')
     if len(inspect_path) > 1:
-        ret = '[<<] Return to ' + ' -> '.join(inspect_path[:-1])
+        buf.append(['', '[<<] Return to ' + ' -> '.join(inspect_path[:-1])])
     else:
-        ret = '[<<] Exit Inspector'
-    buf.append(['', ret])
-    vim.command('normal! 3G0')
-    vim.command('call SlimvHelp(2)')
-    vim.command('call winrestview(oldpos)')
+        buf.append(['', '[<<] Exit Inspector'])
     if int(istate) > int(end):
         # There are more entries to request
         # Save current range for the next request
@@ -425,14 +419,21 @@ def swank_parse_inspect(struct):
     """
     Parse the swank inspector output
     """
-    global inspect_content
+    global inspect_lines
+    global inspect_newline
 
     vim.command('call SlimvOpenInspectBuffer()')
     buf = vim.current.buffer
-    buf[:] = ['Inspecting ' + parse_plist(struct, ':title'), '--------------------']
+    title = parse_plist(struct, ':title')
+    vim.command('let b:inspect_title="' + title + '"')
+    buf[:] = ['Inspecting ' + title, '--------------------', '']
+    vim.command('normal! 3G0')
+    vim.command('call SlimvHelp(2)')
     pcont = parse_plist(struct, ':content')
-    inspect_content = []
+    inspect_lines = 3
+    inspect_newline = True
     swank_parse_inspect_content(pcont)
+    vim.command('call SlimvSetInspectPos("' + title + '")')
 
 def swank_parse_debug(struct):
     """
@@ -678,6 +679,11 @@ def swank_listen():
                     # REPL requests entering a string
                     read_string = r[1:3]
 
+                elif message == ':read-from-minibuffer':
+                    # REPL requests entering a string in the command line
+                    read_string = r[1:3]
+                    vim.command("let s:input_prompt='%s'" % unquote(r[3]).replace("'", "''"))
+
                 elif message == ':indentation-update':
                     for el in r[1]:
                         indent_info[ unquote(el[0]) ] = el[1]
@@ -717,7 +723,7 @@ def swank_listen():
                                 pass
                             elif element == 'nil' and action and action.name == ':inspector-pop':
                                 # Quit inspector
-                                vim.command('b #')
+                                vim.command('call SlimvQuitInspect(0)')
                             elif element != 'nil' and action and action.name in to_nodisp:
                                 # Do not display output, just store it in actions
                                 action.result = unquote(params)
@@ -977,12 +983,20 @@ def swank_undefine_function(fn):
 
 def swank_return_string(s):
     global read_string
-    swank_send('(:emacs-return-string ' + read_string[0] + ' ' + read_string[1] + ' ' + s + ')')
+    swank_send('(:emacs-return-string ' + read_string[0] + ' ' + read_string[1] + ' "' + s + '")')
+    read_string = None
+
+def swank_return(s):
+    global read_string
+    if s != '':
+        swank_send('(:emacs-return ' + read_string[0] + ' ' + read_string[1] + ' "' + s + '")')
     read_string = None
 
 def swank_inspect(symbol):
+    global inspect_package
     cmd = '(swank:init-inspector "' + symbol + '")'
-    swank_rex(':init-inspector', cmd, get_swank_package(), 't')
+    inspect_package = get_swank_package() 
+    swank_rex(':init-inspector', cmd, inspect_package, 't')
 
 def swank_inspect_nth_part(n):
     cmd = '(swank:inspect-nth-part ' + str(n) + ')'
@@ -993,7 +1007,7 @@ def swank_inspector_nth_action(n):
     swank_rex(':inspector-call-nth-action', cmd, 'nil', 't', str(n))
 
 def swank_inspector_pop():
-    # Remove the last two entries from the inspect path
+    # Remove the last entry from the inspect path
     vim.command('let s:inspect_path = s:inspect_path[:-2]')
     swank_rex(':inspector-pop', '(swank:inspector-pop)', 'nil', 't')
 
@@ -1009,13 +1023,21 @@ def swank_inspector_range():
     start = int(vim.eval("b:range_start"))
     end   = int(vim.eval("b:range_end"))
     cmd = '(swank:inspector-range ' + str(end) + " " + str(end+(end-start)) + ')'
-    swank_rex(':inspector-range', cmd, get_swank_package(), 't')
+    swank_rex(':inspector-range', cmd, inspect_package, 't')
 
 def swank_quit_inspector():
+    global inspect_package
     swank_rex(':quit-inspector', '(swank:quit-inspector)', 'nil', 't')
+    inspect_package = ''
+
+def swank_break_on_exception(flag):
+    if flag:
+        swank_rex(':break-on-exception', '(swank:break-on-exception "true")', 'nil', current_thread)
+    else:
+        swank_rex(':break-on-exception', '(swank:break-on-exception "false")', 'nil', current_thread)
 
 def swank_set_break(symbol):
-    cmd = '(swank:sldb-break"' + symbol + '")'
+    cmd = '(swank:sldb-break "' + symbol + '")'
     swank_rex(':sldb-break', cmd, get_package(), 't')
 
 def swank_toggle_trace(symbol):
@@ -1135,7 +1157,7 @@ def swank_disconnect():
     finally:
         sock = None
         vim.command('let s:swank_connected = 0')
-        sys.stdout.write( 'Connection to SWANK server is closed.\n' )
+        vim.command("let s:swank_result='Connection to SWANK server is closed.\n'")
 
 def swank_input(formvar):
     global empty_last_line
@@ -1144,7 +1166,7 @@ def swank_input(formvar):
     form = vim.eval(formvar)
     if read_string:
         # We are in :read-string mode, pass string entered to REPL
-        swank_return_string('"' + form + '"')
+        swank_return_string(form)
     elif form[0] == '[':
         if form[1] == '-':
             swank_inspector_pop()
@@ -1206,11 +1228,12 @@ def swank_response(name):
         if not a.pending and (name == '' or name == a.name):
             vc = ":let s:swank_action='" + a.name + "'"
             vim.command(vc)
-            sys.stdout.write(a.result)
+            vim.command("let s:swank_result='%s'" % a.result.replace("'", "''"))
             actions.pop(a.id)
             actions_pending()
             return
     vc = ":let s:swank_action=''"
+    vc = ":let s:swank_result=''"
     vim.command(vc)
     actions_pending()
 

@@ -11,6 +11,9 @@ Slimv comes with Paredit Mode, which is similar to the functionality of paredit.
 Please visit the Slimv Tutorial for a more complete introduction:
 http://kovisoft.bitbucket.org/tutorial.html
 
+Please find the most recent development version in the repository:
+https://bitbucket.org/kovisoft/slimv
+
 Here follows a list of Slimv commands, any similarity with SLIME's menu is not coincidental. :)
 
 Edit commands:
@@ -34,10 +37,12 @@ Debug commands:
     *  Untrace All
     *  Disassemble
     *  Set Breakpoint
+    *  Break on Exception
     *  Inspect
     *  Abort
     *  Quit to Toplevel
     *  Continue
+    *  Restart Frame
     *  List Threads
     *  Kill Thread
     *  Debug Thread

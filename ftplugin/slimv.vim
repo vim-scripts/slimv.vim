@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.9.8
-" Last Change:  30 Jul 2012
+" Version:      0.9.9
+" Last Change:  10 Nov 2012
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -71,7 +71,7 @@ endfunction
 
 " Try to autodetect SWANK and build the command to start the SWANK server
 function! SlimvSwankCommand()
-    if exists( 'g:slimv_swank_clojure' ) && SlimvGetFiletype() == 'clojure'
+    if exists( 'g:slimv_swank_clojure' ) && SlimvGetFiletype() =~ '.*clojure.*'
         return g:slimv_swank_clojure
     endif
     if exists( 'g:slimv_swank_scheme' ) && SlimvGetFiletype() == 'scheme'
@@ -271,7 +271,7 @@ endif
 " =====================================================================
 
 if !exists( 'g:slimv_template_apropos' )
-    if SlimvGetFiletype() == 'clojure'
+    if SlimvGetFiletype() =~ '.*clojure.*'
         let g:slimv_template_apropos = '(find-doc "%1")'
     else
         let g:slimv_template_apropos = '(apropos "%1")'
@@ -293,6 +293,7 @@ let s:swank_package = ''                                  " Package to use at th
 let s:swank_form = ''                                     " Form to send to SWANK
 let s:refresh_disabled = 0                                " Set this variable temporarily to avoid recursive REPL rehresh calls
 let s:sldb_level = -1                                     " Are we in the SWANK debugger? -1 == no, else SLDB level
+let s:break_on_exception = 0                              " Enable debugger break on exceptions (for ritz-swank)
 let s:compiled_file = ''                                  " Name of the compiled file
 let s:current_buf = -1                                    " Swank action was requested from this buffer
 let s:current_win = -1                                    " Swank action was requested from this window
@@ -345,7 +346,9 @@ endfunction
 " after the last character of the buffer when in insert mode
 function s:EndOfBuffer()
     normal! G$
-    call cursor( line('$'), 99999 )
+    if &virtualedit != 'all'
+        call cursor( line('$'), 99999 )
+    endif
 endfunction
 
 " Position the cursor at the end of the REPL buffer
@@ -447,15 +450,12 @@ function! SlimvSwankResponse()
     let s:refresh_disabled = 1
     silent execute 'python swank_output(1)'
     let s:refresh_disabled = 0
-    let msg = ''
-    redir => msg
+    let s:swank_action = ''
+    let s:swank_result = ''
     silent execute 'python swank_response("")'
-    redir END
 
-    if msg != ''
-        if s:swank_action == ':describe-symbol'
-            echo substitute(msg,'^\n*','','')
-        endif
+    if s:swank_action == ':describe-symbol' && s:swank_result != ''
+        echo substitute(s:swank_result,'^\n*','','')
     endif
     if s:swank_actions_pending
         let s:last_update = -1
@@ -483,8 +483,8 @@ endfunction
 function! SlimvCommandGetResponse( name, cmd, timeout )
     let s:refresh_disabled = 1
     call SlimvCommand( a:cmd )
-    let msg = ''
     let s:swank_action = ''
+    let s:swank_result = ''
     let starttime = localtime()
     let cmd_timeout = a:timeout
     if cmd_timeout == 0
@@ -492,12 +492,10 @@ function! SlimvCommandGetResponse( name, cmd, timeout )
     endif
     while s:swank_action == '' && localtime()-starttime < cmd_timeout
         python swank_output( 0 )
-        redir => msg
         silent execute 'python swank_response("' . a:name . '")'
-        redir END
     endwhile
     let s:refresh_disabled = 0
-    return msg
+    return s:swank_result
 endfunction
 
 " Reload the contents of the REPL buffer from the output file if changed
@@ -517,6 +515,13 @@ function! SlimvRefreshReplBuffer()
 
     if s:swank_connected
         call SlimvSwankResponse()
+    endif
+
+    if exists("s:input_prompt") && s:input_prompt != ''
+        let answer = input( s:input_prompt )
+        unlet s:input_prompt
+        echo ""
+        call SlimvCommand( 'python swank_return("' . answer . '")' )
     endif
 endfunction
 
@@ -666,7 +671,7 @@ if exists("g:lisp_rainbow") && g:lisp_rainbow != 0
     syn region lispParen8 contained matchgroup=hlLevel8 start="`\=("  skip="|.\{-}|" end=")"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen9
     syn region lispParen9 contained matchgroup=hlLevel9 start="`\=("  skip="|.\{-}|" end=")"  matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen0
 
- if SlimvGetFiletype() == 'clojure'
+ if SlimvGetFiletype() =~ '.*\(clojure\|scheme\).*'
     syn region lispParen0           matchgroup=hlLevel0 start="`\=\[" skip="|.\{-}|" end="\]" matchgroup=replPrompt end="^\S\+>"              contains=@replListCluster,lispParen1,replPrompt
     syn region lispParen1 contained matchgroup=hlLevel1 start="`\=\[" skip="|.\{-}|" end="\]" matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen2
     syn region lispParen2 contained matchgroup=hlLevel2 start="`\=\[" skip="|.\{-}|" end="\]" matchgroup=replPrompt end="^\S\+>"me=s-1,re=s-1 contains=@replListCluster,lispParen3
@@ -729,7 +734,7 @@ function! SlimvOpenReplBuffer()
         inoremap <buffer> <silent>        <Up>     <C-R>=pumvisible() ? "\<lt>Up>" : "\<lt>C-O>:call SlimvHandleUp()\<lt>CR>"<CR>
         inoremap <buffer> <silent>        <Down>   <C-R>=pumvisible() ? "\<lt>Down>" : "\<lt>C-O>:call SlimvHandleDown()\<lt>CR>"<CR>
     else
-        inoremap <buffer> <silent>        <CR>     <C-R>=pumvisible() ? "\<lt>CR>" : SlimvHandleEnterRepl()<CR><C-O>:call SlimvArglistOnEnter()<CR>
+        inoremap <buffer> <silent>        <CR>     <C-R>=pumvisible() ? "\<lt>CR>" : SlimvHandleEnterRepl()<CR><C-R>=SlimvArglistOnEnter()<CR>
         inoremap <buffer> <silent>        <C-Up>   <C-R>=pumvisible() ? "\<lt>Up>" : "\<lt>C-O>:call SlimvHandleUp()\<lt>CR>"<CR>
         inoremap <buffer> <silent>        <C-Down> <C-R>=pumvisible() ? "\<lt>Down>" : "\<lt>C-O>:call SlimvHandleDown()\<lt>CR>"<CR>
     endif
@@ -751,7 +756,7 @@ function! SlimvOpenReplBuffer()
         execute 'noremap <buffer> <silent> ' . g:slimv_leader.'ro     :call SlimvSendCommand(1)<CR>'
         execute 'noremap <buffer> <silent> ' . g:slimv_leader.'rp     :call SlimvPreviousCommand()<CR>'
         execute 'noremap <buffer> <silent> ' . g:slimv_leader.'rn     :call SlimvNextCommand()<CR>'
-        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'rc     :call SlimvClearReplBuffer()<CR>'
+        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'-      :call SlimvClearReplBuffer()<CR>'
     endif
 
     if g:slimv_repl_wrap
@@ -802,7 +807,7 @@ function SlimvOpenInspectBuffer()
     noremap  <buffer> <silent>        <F1>   :call SlimvToggleHelp()<CR>
     noremap  <buffer> <silent>        <CR>   :call SlimvHandleEnterInspect()<CR>
     noremap  <buffer> <silent> <Backspace>   :call SlimvSendSilent(['[-1]'])<CR>
-    execute 'noremap <buffer> <silent> ' . g:slimv_leader.'q      :call SlimvQuitInspect()<CR>'
+    execute 'noremap <buffer> <silent> ' . g:slimv_leader.'q      :call SlimvQuitInspect(1)<CR>'
 
     if version < 703
         " conceal mechanism is defined since Vim 7.3
@@ -881,12 +886,17 @@ function SlimvEndUpdate()
 endfunction
 
 " Quit Inspector
-function SlimvQuitInspect()
+function SlimvQuitInspect( force )
     " Clear the contents of the Inspect buffer
+    if exists( 'b:inspect_pos' )
+        unlet b:inspect_pos
+    endif
     setlocal noreadonly
     silent! %d
     call SlimvEndUpdate()
-    call SlimvCommand( 'python swank_quit_inspector()' )
+    if a:force
+        call SlimvCommand( 'python swank_quit_inspector()' )
+    endif
     b #
 endfunction
 
@@ -975,7 +985,7 @@ endfunction
 
 " Set 'iskeyword' option depending on file type
 function! s:SetKeyword()
-    if SlimvGetFiletype() == 'clojure'
+    if SlimvGetFiletype() =~ '.*\(clojure\|scheme\).*'
         setlocal iskeyword+=+,-,*,/,%,<,=,>,:,$,?,!,@-@,94,~,#,\|,&
     else
         setlocal iskeyword+=+,-,*,/,%,<,=,>,:,$,?,!,@-@,94,~,#,\|,&,.,{,},[,]
@@ -1067,7 +1077,7 @@ function! SlimvFindPackage()
         return
     endif
     let oldpos = winsaveview()
-    if SlimvGetFiletype() == 'clojure'
+    if SlimvGetFiletype() =~ '.*clojure.*'
         let string = '\(in-ns\|ns\)'
     else
         let string = '\(cl:\|common-lisp:\|\)in-package'
@@ -1325,11 +1335,11 @@ function! s:CloseForm( lines )
             " We are outside of strings and comments, now we shall count parens
             if form[i] == '('
                 let end = ')' . end
-            elseif form[i] == '[' && SlimvGetFiletype() == 'clojure'
+            elseif form[i] == '[' && SlimvGetFiletype() =~ '.*\(clojure\|scheme\).*'
                 let end = ']' . end
-            elseif form[i] == '{' && SlimvGetFiletype() == 'clojure'
+            elseif form[i] == '{' && SlimvGetFiletype() =~ '.*\(clojure\|scheme\).*'
                 let end = '}' . end
-            elseif form[i] == ')' || ((form[i] == ']' || form[i] == '}') && SlimvGetFiletype() == 'clojure')
+            elseif form[i] == ')' || ((form[i] == ']' || form[i] == '}') && SlimvGetFiletype() =~ '.*\(clojure\|scheme\).*')
                 if len( end ) == 0 || end[0] != form[i]
                     " Oops, too many closing parens or invalid closing paren
                     return 'ERROR'
@@ -1407,7 +1417,7 @@ endfunction
 
 " Return Lisp source code indentation at the given line
 function! SlimvIndent( lnum )
-    if a:lnum <= 1
+    if &autoindent == 0 || a:lnum <= 1
         " Start of the file
         return 0
     endif
@@ -1460,11 +1470,28 @@ function! SlimvIndent( lnum )
     " more than g:slimv_indent_maxlines lines.
     let backline = max([pnum-g:slimv_indent_maxlines, 1])
     let indent_keylists = g:slimv_indent_keylists
+
+    " Check if the previous line actually ends with a multi-line subform
+    let parent = pnum
+    let [l, c] = searchpos( ')', 'bW' )
+    if l == pnum
+        let [l, c] = searchpairpos( '(', '', ')', 'bW', s:skip_sc, backline )
+        if l > 0
+            " Make sure it is not a top level form and the containing form starts in the same line
+            let [l2, c2] = searchpairpos( '(', '', ')', 'bW', s:skip_sc, backline )
+            if l2 == l
+                " Remember the first line of the multi-line form
+                let parent = l
+            endif
+        endif
+    endif
+    call winrestview( oldpos )
+
     " Find beginning of the innermost containing form
     normal! 0
     let [l, c] = searchpairpos( '(', '', ')', 'bW', s:skip_sc, backline )
     if l > 0
-        if SlimvGetFiletype() == 'clojure'
+        if SlimvGetFiletype() =~ '.*\(clojure\|scheme\).*'
             " Is this a clojure form with [] binding list?
             call winrestview( oldpos )
             let [lb, cb] = searchpairpos( '\[', '', '\]', 'bW', s:skip_sc, backline )
@@ -1500,7 +1527,7 @@ function! SlimvIndent( lnum )
                         endif
                     endif
                 endif
-                if SlimvGetFiletype() != 'clojure'
+                if SlimvGetFiletype() !~ '.*clojure.*'
                     if l2 == l && match( line2, '\c^(\s*\('.s:binding_form.'\)\>' ) >= 0
                         " Is this a lisp form with binding list?
                         call winrestview( oldpos )
@@ -1545,7 +1572,7 @@ function! SlimvIndent( lnum )
     call winrestview( oldpos )
 
     " Check if the current form started in the previous nonblank line
-    if l == pnum
+    if l == parent
         " Found opening paren in the previous line
         let line = getline(l)
         let form = strpart( line, c )
@@ -1572,7 +1599,7 @@ function! SlimvIndent( lnum )
                 return c + 1
             endif
         endif
-        if SlimvGetFiletype() == 'clojure'
+        if SlimvGetFiletype() =~ '.*clojure.*'
             " Fix clojure specific indentation issues not handled by the default lisp.vim
             if match( func, 'defn$' ) >= 0
                 return c + 1
@@ -1586,6 +1613,8 @@ function! SlimvIndent( lnum )
         let func = substitute(func, '^.*:', '', '')
         if func != '' && s:swank_connected
             " Look how many arguments are on the same line
+            " If an argument is actually a multi-line subform, then replace it with a single character
+            let form = substitute( form, "([^()]*$", '0', 'g' )
             let form = substitute( form, "[()\\[\\]{}#'`,]", '', 'g' )
             let args_here = len( split( form ) ) - 1
             " Get swank indent info
@@ -1720,6 +1749,9 @@ function! SlimvArglistOnEnter()
     endif
     let s:arglist_line = 0
     let s:arglist_col = 0
+
+    " This function is called from <C-R>= mappings, must return empty string
+    return ''
 endfunction
 
 " Handle insert mode 'Tab' keypress by doing completion or indentation
@@ -1844,7 +1876,9 @@ function! SlimvHandleEnterRepl()
         endif
     else
         " Send current command line for evaluation
-        call cursor( 0, 99999 )
+        if &virtualedit != 'all'
+            call cursor( 0, 99999 )
+        endif
         call SlimvSendCommand(0)
     endif
     return ''
@@ -1905,6 +1939,15 @@ function! SlimvHandleEnterSldb()
     execute "normal! \<CR>"
 endfunction
 
+" Restore Inspector cursor position if the referenced title has already been visited
+function SlimvSetInspectPos( title )
+    if exists( 'b:inspect_pos' ) && has_key( b:inspect_pos, a:title )
+        call winrestview( b:inspect_pos[a:title] )
+    else
+        normal! gg0
+    endif
+endfunction
+
 " Handle normal mode 'Enter' keypress in the Inspector buffer
 function! SlimvHandleEnterInspect()
     let line = getline('.')
@@ -1935,6 +1978,14 @@ function! SlimvHandleEnterInspect()
     if l == line( '.' )
         " Keep the relevant part of the line
         let line = strpart( line, c )
+    endif
+
+    if exists( 'b:inspect_title' ) && b:inspect_title != ''
+        " Save cursor position in case we'll return to this page later on
+        if !exists( 'b:inspect_pos' )
+            let b:inspect_pos = {}
+        endif
+	let b:inspect_pos[b:inspect_title] = winsaveview()
     endif
 
     if line[0] == '['
@@ -1980,6 +2031,16 @@ function! SlimvHandleEnterInspect()
             if item != ''
                 " Add item name to the object path
                 let entry = matchstr(line, '\[\d\+\]\s*\zs.\{-}\ze\s*\[\]}')
+                if entry == ''
+                    let entry = matchstr(line, '\[\d\+\]\s*\zs.*')
+                endif
+                if entry == ''
+                    let entry = 'Unknown object'
+                endif
+                if len( entry ) > 40
+                    " Crop if too long
+                    let entry = strpart( entry, 0, 37 ) . '...'
+                endif
                 let s:inspect_path = s:inspect_path + [entry]
             endif
         endif
@@ -2133,7 +2194,13 @@ function! SlimvArglist( ... )
         let [l0, c0] = searchpairpos( '(', '', ')', 'nbW', s:skip_sc, matchb )
         if l0 > 0
             " Found opening paren, let's find out the function name
-            let arg = matchstr( getline(l0), '\<\k*\>', c0 )
+            let arg = ''
+            while arg == '' && l0 <= l
+                let funcline = substitute( getline(l0), ';.*$', '', 'g' )
+                let arg = matchstr( funcline, '\<\k*\>', c0 )
+                let l0 = l0 + 1
+                let c0 = 0
+            endwhile
             if arg != ''
                 " Ask function argument list from SWANK
                 call SlimvFindPackage()
@@ -2146,7 +2213,8 @@ function! SlimvArglist( ... )
                     set noshowmode
                     let msg = substitute( msg, "\n", "", "g" )
                     redraw
-                    if match( msg, arg ) != 1
+                    " Use \V ('very nomagic') for exact string match instead of regex 
+                    if match( msg, "\\V" . arg ) != 1
                         " Function name is not received from REPL
                         call SlimvShortEcho( "(" . arg . ' ' . msg[1:] )
                     else
@@ -2157,6 +2225,9 @@ function! SlimvArglist( ... )
         endif
         let &virtualedit=save_ve
     endif
+
+    " This function is also called from <C-R>= mappings, must return empty string
+    return ''
 endfunction
 
 " Start and connect swank server
@@ -2417,6 +2488,22 @@ function! SlimvMacroexpandAll()
             call s:EndOfBuffer()
         endif
         call SlimvCommandUsePackage( 'python swank_macroexpand_all("s:swank_form")' )
+    endif
+endfunction
+
+" Toggle debugger break on exceptions
+" Only for ritz-swank 0.4.0 and above
+function! SlimvBreakOnException()
+    if SlimvGetFiletype() =~ '.*clojure.*' && s:swank_version >= '2010-11-13'
+        " swank-clojure is abandoned at protocol version 20100404, so it must be ritz-swank
+        if SlimvConnectSwank()
+            let s:break_on_exception = ! s:break_on_exception
+            call SlimvCommand( 'python swank_break_on_exception(' . s:break_on_exception . ')' )
+            call SlimvRefreshReplBuffer()
+            echomsg 'Break On Exception ' . (s:break_on_exception ? 'enabled.' : 'disabled.')
+        endif
+    else
+        call SlimvError( "This function is implemented only for ritz-swank." )
     endif
 endfunction
 
@@ -2989,8 +3076,8 @@ endfunction
 " Initialize buffer by adding buffer specific mappings
 function! SlimvInitBuffer()
     " Map space to display function argument list in status line
-    inoremap <silent> <buffer> <Space>    <Space><C-O>:call SlimvArglist(line('.'),col('.')-1)<CR>
-    inoremap <silent> <buffer> <CR>       <C-R>=pumvisible() ?  "\<lt>CR>" : SlimvHandleEnter()<CR><C-O>:call SlimvArglistOnEnter()<CR>
+    inoremap <silent> <buffer> <Space>    <Space><C-R>=SlimvArglist(line('.'),col('.')-1)<CR>
+    inoremap <silent> <buffer> <CR>       <C-R>=pumvisible() ?  "\<lt>CR>" : SlimvHandleEnter()<CR><C-R>=SlimvArglistOnEnter()<CR>
     "noremap  <silent> <buffer> <C-C>      :call SlimvInterrupt()<CR>
     if !exists( 'b:au_insertleave_set' )
         let b:au_insertleave_set = 1
@@ -3013,6 +3100,25 @@ endfunction
 call s:MenuMap( 'Slim&v.Edi&t.Close-&Form',                     g:slimv_leader.')',  g:slimv_leader.'tc',  ':<C-U>call SlimvCloseForm()<CR>' )
 call s:MenuMap( 'Slim&v.Edi&t.&Complete-Symbol<Tab>Tab',        '',                  '',                   '<Ins><C-X><C-O>' )
 call s:MenuMap( 'Slim&v.Edi&t.&Paredit-Toggle',                 g:slimv_leader.'(',  g:slimv_leader.'(t',  ':<C-U>call PareditToggle()<CR>' )
+call s:MenuMap( 'Slim&v.Edi&t.-PareditSep-',                    '',                  '',                   ':' )
+
+if g:paredit_shortmaps
+call s:MenuMap( 'Slim&v.Edi&t.Paredit-&Wrap<Tab>'                             .'W',  '',  '',              ':<C-U>call PareditWrap("(",")")<CR>' )
+call s:MenuMap( 'Slim&v.Edi&t.Paredit-Spli&ce<Tab>'                           .'S',  '',  '',              ':<C-U>call PareditSplice()<CR>' )
+call s:MenuMap( 'Slim&v.Edi&t.Paredit-&Split<Tab>'                            .'O',  '',  '',              ':<C-U>call PareditSplit()<CR>' )
+call s:MenuMap( 'Slim&v.Edi&t.Paredit-&Join<Tab>'                             .'J',  '',  '',              ':<C-U>call PareditJoin()<CR>' )
+call s:MenuMap( 'Slim&v.Edi&t.Paredit-Ra&ise<Tab>'             .g:slimv_leader.'I',  '',  '',              ':<C-U>call PareditRaise()<CR>' )
+call s:MenuMap( 'Slim&v.Edi&t.Paredit-Move&Left<Tab>'                         .'<',  '',  '',              ':<C-U>call PareditMoveLeft()<CR>' )
+call s:MenuMap( 'Slim&v.Edi&t.Paredit-Move&Right<Tab>'                        .'>',  '',  '',              ':<C-U>call PareditMoveRight()<CR>' )
+else
+call s:MenuMap( 'Slim&v.Edi&t.Paredit-&Wrap<Tab>'              .g:slimv_leader.'W',  '',  '',              ':<C-U>call PareditWrap("(",")")<CR>' )
+call s:MenuMap( 'Slim&v.Edi&t.Paredit-Spli&ce<Tab>'            .g:slimv_leader.'S',  '',  '',              ':<C-U>call PareditSplice()<CR>' )
+call s:MenuMap( 'Slim&v.Edi&t.Paredit-&Split<Tab>'             .g:slimv_leader.'O',  '',  '',              ':<C-U>call PareditSplit()<CR>' )
+call s:MenuMap( 'Slim&v.Edi&t.Paredit-&Join<Tab>'              .g:slimv_leader.'J',  '',  '',              ':<C-U>call PareditJoin()<CR>' )
+call s:MenuMap( 'Slim&v.Edi&t.Paredit-Ra&ise<Tab>'             .g:slimv_leader.'I',  '',  '',              ':<C-U>call PareditRaise()<CR>' )
+call s:MenuMap( 'Slim&v.Edi&t.Paredit-Move&Left<Tab>'          .g:slimv_leader.'<',  '',  '',              ':<C-U>call PareditMoveLeft()<CR>' )
+call s:MenuMap( 'Slim&v.Edi&t.Paredit-Move&Right<Tab>'         .g:slimv_leader.'>',  '',  '',              ':<C-U>call PareditMoveRight()<CR>' )
+endif
 
 " Evaluation commands
 call s:MenuMap( 'Slim&v.&Evaluation.Eval-&Defun',               g:slimv_leader.'d',  g:slimv_leader.'ed',  ':<C-U>call SlimvEvalDefun()<CR>' )
@@ -3028,6 +3134,7 @@ call s:MenuMap( 'Slim&v.De&bugging.&Macroexpand-All',           g:slimv_leader.'
 call s:MenuMap( 'Slim&v.De&bugging.Toggle-&Trace\.\.\.',        g:slimv_leader.'t',  g:slimv_leader.'dt',  ':call SlimvTrace()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.U&ntrace-All',               g:slimv_leader.'T',  g:slimv_leader.'du',  ':call SlimvUntrace()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.Set-&Breakpoint',            g:slimv_leader.'B',  g:slimv_leader.'db',  ':call SlimvBreak()<CR>' )
+call s:MenuMap( 'Slim&v.De&bugging.Break-on-&Exception',        g:slimv_leader.'E',  g:slimv_leader.'de',  ':call SlimvBreakOnException()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.Disassemb&le\.\.\.',         g:slimv_leader.'l',  g:slimv_leader.'dd',  ':call SlimvDisassemble()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Inspect\.\.\.',             g:slimv_leader.'i',  g:slimv_leader.'di',  ':call SlimvInspect()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.-SldbSep-',                  '',                  '',                   ':' )
@@ -3038,7 +3145,6 @@ call s:MenuMap( 'Slim&v.De&bugging.-ThreadSep-',                '',             
 call s:MenuMap( 'Slim&v.De&bugging.List-T&hreads',              g:slimv_leader.'H',  g:slimv_leader.'dl',  ':call SlimvListThreads()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Kill-Thread\.\.\.',         g:slimv_leader.'K',  g:slimv_leader.'dk',  ':call SlimvKillThread()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Debug-Thread\.\.\.',        g:slimv_leader.'G',  g:slimv_leader.'dT',  ':call SlimvDebugThread()<CR>' )
-
 
 " Compile commands
 call s:MenuMap( 'Slim&v.&Compilation.Compile-&Defun',           g:slimv_leader.'D',  g:slimv_leader.'cd',  ':<C-U>call SlimvCompileDefun()<CR>' )
