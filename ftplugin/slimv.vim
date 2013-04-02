@@ -1,6 +1,6 @@
 " slimv.vim:    The Superior Lisp Interaction Mode for VIM
-" Version:      0.9.9
-" Last Change:  10 Nov 2012
+" Version:      0.9.10
+" Last Change:  28 Jan 2013
 " Maintainer:   Tamas Kovacs <kovisoft at gmail dot com>
 " License:      This file is placed in the public domain.
 "               No warranty, express or implied.
@@ -370,6 +370,18 @@ function! SlimvMarkBufferEnd()
     let b:repl_prompt = getline( b:repl_prompt_line )
 endfunction
 
+" Get REPL prompt line. Fix stored prompt position when corrupted
+" (e.g. some lines were deleted from the REPL buffer)
+function! s:GetPromptLine()
+    if b:repl_prompt_line > line( '$' )
+        " Stored prompt line is corrupt
+        let b:repl_prompt_line = line( '$' )
+        let b:repl_prompt_col = len( getline('$') ) + 1
+        let b:repl_prompt = getline( b:repl_prompt_line )
+    endif
+    return b:repl_prompt_line
+endfunction
+
 " Save caller buffer identification
 function! SlimvBeginUpdate()
     let s:current_buf = bufnr( "%" )
@@ -556,7 +568,9 @@ endfunction
 function! SlimvRefreshModeOff()
     execute "au! CursorHold"
     execute "au! CursorHoldI"
-    unlet b:au_curhold_set
+    if exists( 'b:au_curhold_set' )
+        unlet b:au_curhold_set
+    endif
 endfunction
 
 " Called when entering REPL buffer
@@ -637,7 +651,7 @@ function! SlimvOpenBuffer( name )
     endif
     setlocal buftype=nofile
     setlocal noswapfile
-    setlocal noreadonly
+    setlocal modifiable
 endfunction
 
 " Go to the end of the screen line
@@ -711,7 +725,6 @@ endfunction
 function! SlimvOpenReplBuffer()
     call SlimvOpenBuffer( g:slimv_repl_name )
     call b:SlimvInitRepl()
-    call PareditInitBuffer()
     if g:slimv_repl_syntax
         call SlimvSetSyntaxRepl()
     else
@@ -851,10 +864,12 @@ function SlimvOpenSldbBuffer()
         execute 'noremap <buffer> <silent> ' . g:slimv_leader.'a      :call SlimvDebugAbort()<CR>'
         execute 'noremap <buffer> <silent> ' . g:slimv_leader.'q      :call SlimvDebugQuit()<CR>'
         execute 'noremap <buffer> <silent> ' . g:slimv_leader.'n      :call SlimvDebugContinue()<CR>'
+        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'N      :call SlimvDebugRestartFrame()<CR>'
     elseif g:slimv_keybindings == 2
         execute 'noremap <buffer> <silent> ' . g:slimv_leader.'da     :call SlimvDebugAbort()<CR>'
         execute 'noremap <buffer> <silent> ' . g:slimv_leader.'dq     :call SlimvDebugQuit()<CR>'
         execute 'noremap <buffer> <silent> ' . g:slimv_leader.'dn     :call SlimvDebugContinue()<CR>'
+        execute 'noremap <buffer> <silent> ' . g:slimv_leader.'dr     :call SlimvDebugRestartFrame()<CR>'
     endif
 
     " Set folding parameters
@@ -881,7 +896,7 @@ endfunction
 
 " End updating an otherwise readonly buffer
 function SlimvEndUpdate()
-    setlocal readonly
+    setlocal nomodifiable
     setlocal nomodified
 endfunction
 
@@ -891,7 +906,7 @@ function SlimvQuitInspect( force )
     if exists( 'b:inspect_pos' )
         unlet b:inspect_pos
     endif
-    setlocal noreadonly
+    setlocal modifiable
     silent! %d
     call SlimvEndUpdate()
     if a:force
@@ -903,7 +918,7 @@ endfunction
 " Quit Threads
 function SlimvQuitThreads()
     " Clear the contents of the Threads buffer
-    setlocal noreadonly
+    setlocal modifiable
     silent! %d
     call SlimvEndUpdate()
     b #
@@ -912,7 +927,7 @@ endfunction
 " Quit Sldb
 function SlimvQuitSldb()
     " Clear the contents of the Sldb buffer
-    setlocal noreadonly
+    setlocal modifiable
     silent! %d
     call SlimvEndUpdate()
     b #
@@ -942,7 +957,7 @@ endfunction
 
 " Write help text to current buffer at given line
 function SlimvHelp( line )
-    setlocal noreadonly
+    setlocal modifiable
     if exists( 'b:help_shown' )
         let help = b:help
     else
@@ -950,7 +965,6 @@ function SlimvHelp( line )
     endif
     let b:help_line = a:line
     call append( b:help_line, help )
-    call SlimvEndUpdate()
 endfunction
 
 " Toggle help
@@ -962,9 +976,10 @@ function SlimvToggleHelp()
         let lines = 1
         let b:help_shown = 1
     endif
-    setlocal noreadonly
+    setlocal modifiable
     execute ":" . (b:help_line+1) . "," . (b:help_line+lines) . "d"
     call SlimvHelp( b:help_line )
+    call SlimvEndUpdate()
 endfunction
 
 " Open SLDB buffer and place cursor on the given frame
@@ -1259,7 +1274,7 @@ endfunction
 " Set command line after the prompt
 function! SlimvSetCommandLine( cmd )
     let line = getline( "." )
-    if line( "." ) == b:repl_prompt_line
+    if line( "." ) == s:GetPromptLine()
         " The prompt is in the line marked by b:repl_prompt_line
         let promptlen = len( b:repl_prompt )
     else
@@ -1642,7 +1657,7 @@ endfunction
 " Arguments: close = add missing closing parens
 function! SlimvSendCommand( close )
     call SlimvRefreshModeOn()
-    let lastline = b:repl_prompt_line
+    let lastline = s:GetPromptLine()
     let lastcol  = b:repl_prompt_col
     if lastline > 0
         if line( "." ) >= lastline
@@ -1738,7 +1753,12 @@ endfunction
 
 " Display arglist after pressing Enter
 function! SlimvArglistOnEnter()
+    let retval = ""
     if s:arglist_line > 0
+        if col('.') > len(getline('.'))
+            " Stay at the end of line
+            let retval = "\<End>"
+        endif
         let l = line('.')
         if getline(l) == ''
             " Add spaces to make the correct indentation
@@ -1750,8 +1770,8 @@ function! SlimvArglistOnEnter()
     let s:arglist_line = 0
     let s:arglist_col = 0
 
-    " This function is called from <C-R>= mappings, must return empty string
-    return ''
+    " This function is called from <C-R>= mappings, return additional keypress
+    return retval
 endfunction
 
 " Handle insert mode 'Tab' keypress by doing completion or indentation
@@ -1776,7 +1796,7 @@ endfunction
 
 " Handle insert mode 'Backspace' keypress in the REPL buffer
 function! SlimvHandleBS()
-    if line( "." ) == b:repl_prompt_line && col( "." ) <= b:repl_prompt_col
+    if line( "." ) == s:GetPromptLine() && col( "." ) <= b:repl_prompt_col
         " No BS allowed before the previous EOF mark
         return ""
     else
@@ -1804,7 +1824,7 @@ endfunction
 
 " Handle insert mode 'Up' keypress in the REPL buffer
 function! SlimvHandleUp()
-    if line( "." ) >= b:repl_prompt_line
+    if line( "." ) >= s:GetPromptLine()
         if exists( 'g:slimv_cmdhistory' ) && g:slimv_cmdhistorypos == len( g:slimv_cmdhistory )
             call SlimvMarkBufferEnd()
             startinsert!
@@ -1817,7 +1837,7 @@ endfunction
 
 " Handle insert mode 'Down' keypress in the REPL buffer
 function! SlimvHandleDown()
-    if line( "." ) >= b:repl_prompt_line
+    if line( "." ) >= s:GetPromptLine()
         call s:NextCommand()
     else
         normal! gj
@@ -1826,16 +1846,16 @@ endfunction
 
 " Make a fold at the cursor point in the current buffer
 function SlimvMakeFold()
-    setlocal noreadonly
+    setlocal modifiable
     normal! o    }}}kA {{{0
-    setlocal readonly
+    setlocal nomodifiable
 endfunction
 
 " Handle insert mode 'Enter' keypress in the REPL buffer
 function! SlimvHandleEnterRepl()
     " Trim the prompt from the beginning of the command line
     " The user might have overwritten some parts of the prompt
-    let lastline = b:repl_prompt_line
+    let lastline = s:GetPromptLine()
     let lastcol  = b:repl_prompt_col
     let cmdline = getline( lastline )
     let c = 0
@@ -2066,7 +2086,7 @@ endfunction
 " Go to command line and recall previous command from command history
 function! SlimvPreviousCommand()
     call SlimvEndOfReplBuffer()
-    if line( "." ) >= b:repl_prompt_line
+    if line( "." ) >= s:GetPromptLine()
         call s:PreviousCommand()
     endif
 endfunction
@@ -2074,7 +2094,7 @@ endfunction
 " Go to command line and recall next command from command history
 function! SlimvNextCommand()
     call SlimvEndOfReplBuffer()
-    if line( "." ) >= b:repl_prompt_line
+    if line( "." ) >= s:GetPromptLine()
         call s:NextCommand()
     endif
 endfunction
@@ -2121,6 +2141,15 @@ endfunction
 
 function! SlimvDebugContinue()
     call SlimvDebugCommand( ":sldb-continue", "swank_invoke_continue" )
+endfunction
+
+" Restart execution of the frame with the same arguments
+function! SlimvDebugRestartFrame()
+    let frame = s:DebugFrame()
+    if frame != ''
+        call SlimvCommand( 'python swank_restart_frame("' . frame . '")' )
+        call SlimvRefreshReplBuffer()
+    endif
 endfunction
 
 " List current Lisp threads
@@ -2175,20 +2204,31 @@ endfunction
 " Display function argument list
 " Optional argument is the number of characters typed after the keyword
 function! SlimvArglist( ... )
+    let retval = ''
+    let save_ve = &virtualedit
+    set virtualedit=all
     if a:0
         " Symbol position supplied
         let l = a:1
         let c = a:2 - 1
+        let line = getline(l)
     else
         " Check symbol at cursor position
         let l = line('.')
+        let line = getline(l)
         let c = col('.') - 1
+        if c >= len(line)
+            " Stay at the end of line
+            let c = len(line) - 1
+            let retval = "\<End>"
+        endif
+        if line[c-1] == ' '
+            " Is this the space we have just inserted in a mapping?
+            let c = c - 1
+        endif
     endif
-    let line = getline(l)
     call s:SetKeyword()
     if s:swank_connected && c > 0 && line[c-1] =~ '\k\|)\|\]\|}\|"'
-        let save_ve = &virtualedit
-        set virtualedit=all
         " Display only if entering the first space after a keyword
         let matchb = max( [l-200, 1] )
         let [l0, c0] = searchpairpos( '(', '', ')', 'nbW', s:skip_sc, matchb )
@@ -2223,11 +2263,11 @@ function! SlimvArglist( ... )
                 endif
             endif
         endif
-        let &virtualedit=save_ve
     endif
 
-    " This function is also called from <C-R>= mappings, must return empty string
-    return ''
+    " This function is also called from <C-R>= mappings, return additional keypress
+    let &virtualedit=save_ve
+    return retval
 endfunction
 
 " Start and connect swank server
@@ -2966,12 +3006,31 @@ function! SlimvComplete( base )
         return []
     endif
     if s:swank_connected
+        " Save current buffer and window in case a swank command causes a buffer change
+        let buf = bufnr( "%" )
+        if winnr('$') < 2
+            let win = -1
+        else
+            let win = winnr()
+        endif
+
         call SlimvFindPackage()
         if g:slimv_simple_compl
             let msg = SlimvCommandGetResponse( ':simple-completions', 'python swank_completions("' . a:base . '")', 0 )
         else
             let msg = SlimvCommandGetResponse( ':fuzzy-completions', 'python swank_fuzzy_completions("' . a:base . '")', 0 )
         endif
+
+        " Restore window and buffer, because it is not allowed to change buffer here
+        if win >= 0 && winnr() != win
+            execute win . "wincmd w"
+            let msg = ''
+        endif
+        if bufnr( "%" ) != buf
+            execute "buf " . buf
+            let msg = ''
+        endif
+
         if msg != ''
             " We have a completion list from SWANK
             let res = split( msg, '\n' )
@@ -3076,7 +3135,7 @@ endfunction
 " Initialize buffer by adding buffer specific mappings
 function! SlimvInitBuffer()
     " Map space to display function argument list in status line
-    inoremap <silent> <buffer> <Space>    <Space><C-R>=SlimvArglist(line('.'),col('.')-1)<CR>
+    inoremap <silent> <buffer> <Space>    <Space><C-R>=SlimvArglist()<CR>
     inoremap <silent> <buffer> <CR>       <C-R>=pumvisible() ?  "\<lt>CR>" : SlimvHandleEnter()<CR><C-R>=SlimvArglistOnEnter()<CR>
     "noremap  <silent> <buffer> <C-C>      :call SlimvInterrupt()<CR>
     if !exists( 'b:au_insertleave_set' )
@@ -3099,6 +3158,8 @@ endfunction
 " Edit commands
 call s:MenuMap( 'Slim&v.Edi&t.Close-&Form',                     g:slimv_leader.')',  g:slimv_leader.'tc',  ':<C-U>call SlimvCloseForm()<CR>' )
 call s:MenuMap( 'Slim&v.Edi&t.&Complete-Symbol<Tab>Tab',        '',                  '',                   '<Ins><C-X><C-O>' )
+
+if exists( 'g:paredit_loaded' )
 call s:MenuMap( 'Slim&v.Edi&t.&Paredit-Toggle',                 g:slimv_leader.'(',  g:slimv_leader.'(t',  ':<C-U>call PareditToggle()<CR>' )
 call s:MenuMap( 'Slim&v.Edi&t.-PareditSep-',                    '',                  '',                   ':' )
 
@@ -3118,7 +3179,8 @@ call s:MenuMap( 'Slim&v.Edi&t.Paredit-&Join<Tab>'              .g:slimv_leader.'
 call s:MenuMap( 'Slim&v.Edi&t.Paredit-Ra&ise<Tab>'             .g:slimv_leader.'I',  '',  '',              ':<C-U>call PareditRaise()<CR>' )
 call s:MenuMap( 'Slim&v.Edi&t.Paredit-Move&Left<Tab>'          .g:slimv_leader.'<',  '',  '',              ':<C-U>call PareditMoveLeft()<CR>' )
 call s:MenuMap( 'Slim&v.Edi&t.Paredit-Move&Right<Tab>'         .g:slimv_leader.'>',  '',  '',              ':<C-U>call PareditMoveRight()<CR>' )
-endif
+endif "g:paredit_shortmaps
+endif "g:paredit_loaded
 
 " Evaluation commands
 call s:MenuMap( 'Slim&v.&Evaluation.Eval-&Defun',               g:slimv_leader.'d',  g:slimv_leader.'ed',  ':<C-U>call SlimvEvalDefun()<CR>' )
@@ -3141,6 +3203,7 @@ call s:MenuMap( 'Slim&v.De&bugging.-SldbSep-',                  '',             
 call s:MenuMap( 'Slim&v.De&bugging.&Abort',                     g:slimv_leader.'a',  g:slimv_leader.'da',  ':call SlimvDebugAbort()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Quit-to-Toplevel',          g:slimv_leader.'q',  g:slimv_leader.'dq',  ':call SlimvDebugQuit()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Continue',                  g:slimv_leader.'n',  g:slimv_leader.'dc',  ':call SlimvDebugContinue()<CR>' )
+call s:MenuMap( 'Slim&v.De&bugging.&Restart-Frame',             g:slimv_leader.'N',  g:slimv_leader.'dr',  ':call SlimvDebugRestartFrame()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.-ThreadSep-',                '',                  '',                   ':' )
 call s:MenuMap( 'Slim&v.De&bugging.List-T&hreads',              g:slimv_leader.'H',  g:slimv_leader.'dl',  ':call SlimvListThreads()<CR>' )
 call s:MenuMap( 'Slim&v.De&bugging.&Kill-Thread\.\.\.',         g:slimv_leader.'K',  g:slimv_leader.'dk',  ':call SlimvKillThread()<CR>' )
