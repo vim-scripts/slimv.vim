@@ -1755,7 +1755,7 @@ function! SlimvIndent( lnum )
         endif
         if SlimvGetFiletype() =~ '.*clojure.*'
             " Fix clojure specific indentation issues not handled by the default lisp.vim
-            if match( func, 'defn$' ) >= 0
+            if match( func, 'defn-\?$' ) >= 0 || match( func, 'fn$' ) >= 0
                 return c + 1
             endif
         else
